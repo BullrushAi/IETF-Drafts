@@ -1,0 +1,1343 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rfc version="3" ipr="trust200902" docName="draft-stone-atep-02" category="info" submissionType="independent" xml:lang="en" tocInclude="true" sortRefs="true" symRefs="true">
+  <front>
+    <title abbrev="ATEP">ATEP: Agent Trust and Execution Passport</title>
+    <seriesInfo name="Internet-Draft" value="draft-stone-atep-02"/>
+    <author fullname="Ben Stone" initials="B." surname="Stone">
+      <organization>SwarmSync.AI</organization>
+      <address>
+        <email>benstone@swarmsync.ai</email>
+        <uri>https://swarmsync.ai</uri>
+      </address>
+    </author>
+    <date year="2026" month="September" day="4"/>
+    <area>Applications</area>
+    <workgroup>Individual Submission</workgroup>
+    <keyword>AI agents</keyword>
+    <keyword>trust</keyword>
+    <keyword>passport</keyword>
+    <keyword>verifiable credentials</keyword>
+    <abstract>
+      <t>This document specifies the <strong>Agent Trust &amp; Execution Passport (ATEP)</strong>, an open standard for representing an AI agent's verifiable track record of work across marketplaces and platforms. ATEP defines a portable, machine-readable credential format that encodes an agent's execution history, success rate, capability domains, trust tier, and earned badges. The passport is computed entirely from append-only execution logs and cannot be manually inflated.</t>
+      <t>ATEP is the <strong>trust layer</strong> for agent-to-agent commerce. As agents move between marketplaces, ATEP provides a universal format for answering the question: <em>"Should I hire this agent?"</em></t>
+    </abstract>
+  </front>
+  <middle>
+    <section anchor="s-1-introduction">
+      <name>1. Introduction</name>
+      <section anchor="s-1-1-problem-statement">
+        <name>1.1 Problem Statement</name>
+        <t>As AI agents proliferate across marketplaces and platforms, there is no standard way to:</t>
+        <ol>
+          <li>
+            <t>Represent an agent's track record of completed work</t>
+          </li>
+          <li>
+            <t>Compute trust scores from verifiable execution data</t>
+          </li>
+          <li>
+            <t>Gate access to sensitive operations based on proven reliability</t>
+          </li>
+          <li>
+            <t>Port an agent's reputation across platforms</t>
+          </li>
+          <li>
+            <t>Present a marketplace-safe public profile without exposing internal IDs</t>
+          </li>
+        </ol>
+        <t>Each marketplace builds its own proprietary reputation system. An agent with 1,000 successful sessions on Platform A starts from zero on Platform B. ATEP solves this by defining a portable, verifiable, fraud-resistant credential format.</t>
+      </section>
+      <section anchor="s-1-2-design-goals">
+        <name>1.2 Design Goals</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Goal</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Verifiable</td>
+              <td>Passports are computed from append-only execution logs, not self-reported</td>
+            </tr>
+            <tr>
+              <td>Portable</td>
+              <td>A single JSON document that any platform can parse and display</td>
+            </tr>
+            <tr>
+              <td>Fraud-resistant</td>
+              <td>Stats cannot be inflated; they are derived from immutable session records</td>
+            </tr>
+            <tr>
+              <td>Progressive</td>
+              <td>Trust builds incrementally through demonstrated performance</td>
+            </tr>
+            <tr>
+              <td>Privacy-preserving</td>
+              <td>Public passports omit internal agent IDs and sensitive data</td>
+            </tr>
+            <tr>
+              <td>Extensible</td>
+              <td>Custom badge types and capability domains can be added</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-1-3-relationship-to-other-specifications">
+        <name>1.3 Relationship to Other Specifications</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Spec</th>
+              <th>Relationship</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>VCAP</td>
+              <td>ATEP passports inform VCAP escrow decisions (higher trust = lower escrow requirements)</td>
+            </tr>
+            <tr>
+              <td>AIVS</td>
+              <td>AIVS-verified sessions contribute to ATEP session counts</td>
+            </tr>
+            <tr>
+              <td>Google A2A</td>
+              <td>ATEP can be served as an A2A agent capability metadata extension</td>
+            </tr>
+            <tr>
+              <td>Agent Protocol</td>
+              <td>ATEP trust tiers can gate which Agent Protocol tasks an agent may accept</td>
+            </tr>
+            <tr>
+              <td>DID / Verifiable Credentials</td>
+              <td>ATEP passports can be wrapped in W3C Verifiable Credential format</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-1-4-terminology">
+        <name>1.4 Terminology</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Term</th>
+              <th>Definition</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Agent</td>
+              <td>An autonomous AI system that performs work on behalf of users or other agents</td>
+            </tr>
+            <tr>
+              <td>Session</td>
+              <td>A discrete unit of work performed by an agent (e.g., a browser automation run, an API task)</td>
+            </tr>
+            <tr>
+              <td>Passport</td>
+              <td>The computed credential document representing an agent's track record</td>
+            </tr>
+            <tr>
+              <td>Trust Tier</td>
+              <td>A categorical trust level derived from session statistics</td>
+            </tr>
+            <tr>
+              <td>Badge</td>
+              <td>A specific achievement or certification earned through performance</td>
+            </tr>
+            <tr>
+              <td>Issuer</td>
+              <td>The marketplace or platform that computes and signs the passport</td>
+            </tr>
+            <tr>
+              <td>Capability Domain</td>
+              <td>A category of work the agent has demonstrated proficiency in</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+    <section anchor="s-2-passport-format">
+      <name>2. Passport Format</name>
+      <section anchor="s-2-1-full-passport-private">
+        <name>2.1 Full Passport (Private)</name>
+        <t>The full passport contains all fields. It is stored by the issuing platform and returned to authenticated callers (e.g., the agent's owner, platform admins).</t>
+        <sourcecode type="json">{
+  "atep_version": "1.0",
+  "passport_id": "string (UUID, globally unique)",
+  "agent_id": "string (platform-specific agent identifier)",
+  "issuer": {
+    "platform": "string (e.g., 'swarmsync.ai')",
+    "platform_url": "string (URL of the issuing marketplace)",
+    "issued_at": "string (ISO 8601)",
+    "signature": "string (Ed25519 signature of canonical passport body, Base64-encoded)"
+  },
+  "statistics": {
+    "total_sessions": "number (integer, all sessions ever started)",
+    "successful_sessions": "number (integer, sessions with status COMPLETED)",
+    "failed_sessions": "number (integer, sessions with status FAILED)",
+    "success_rate": "number (float, 0.0–1.0, successful/total)",
+    "total_cost_cents": "number (integer, cumulative cost of all sessions)",
+    "average_cost_cents": "number (integer, mean cost per completed session)",
+    "first_session_at": "string (OPTIONAL, ISO 8601)",
+    "last_session_at": "string (OPTIONAL, ISO 8601)"
+  },
+  "trust_tier": {
+    "current": "UNVERIFIED | BASIC | VERIFIED | TRUSTED",
+    "promoted_at": "string (OPTIONAL, ISO 8601, when current tier was earned)",
+    "next_tier": "string (OPTIONAL, next tier name)",
+    "sessions_until_next": "number (OPTIONAL, sessions needed for next promotion)"
+  },
+  "capabilities": {
+    "domains_worked": ["string (hostnames the agent has operated on)"],
+    "task_types": ["string (action/event types the agent has performed)"],
+    "specializations": ["string (OPTIONAL, high-level categories: 'web_scraping', 'form_filling', 'testing')"]
+  },
+  "badges": [
+    {
+      "badge_type": "string (machine-readable badge identifier)",
+      "label": "string (human-readable display name)",
+      "description": "string (OPTIONAL)",
+      "criteria": "string (OPTIONAL, what was required to earn this badge)",
+      "earned_at": "string (ISO 8601)",
+      "expires_at": "string (ISO 8601, null for permanent badges)",
+      "session_count": "number (OPTIONAL, sessions at time of earning)",
+      "success_rate": "number (OPTIONAL, rate at time of earning)"
+    }
+  ],
+  "identity": {
+    "has_cryptographic_identity": "boolean (true if Ed25519 key pair provisioned)",
+    "public_key": "string (OPTIONAL, Ed25519 SPKI PEM format)",
+    "key_provisioned_at": "string (OPTIONAL, ISO 8601)"
+  },
+  "updated_at": "string (ISO 8601)"
+}
+</sourcecode>
+      </section>
+      <section anchor="s-2-2-public-passport">
+        <name>2.2 Public Passport</name>
+        <t>The public passport is a subset of the full passport, safe for marketplace display. It omits <tt>agent_id</tt>, <tt>public_key</tt>, and internal metadata.</t>
+        <sourcecode type="json">{
+  "atep_version": "1.0",
+  "passport_id": "string",
+  "issuer": {
+    "platform": "string",
+    "platform_url": "string",
+    "issued_at": "string"
+  },
+  "statistics": {
+    "total_sessions": "number",
+    "successful_sessions": "number",
+    "failed_sessions": "number",
+    "success_rate": "number"
+  },
+  "trust_tier": {
+    "current": "UNVERIFIED | BASIC | VERIFIED | TRUSTED"
+  },
+  "capabilities": {
+    "domains_worked": ["string (top 50, sorted by frequency)"],
+    "task_types": ["string"],
+    "specializations": ["string"]
+  },
+  "badges": [
+    {
+      "badge_type": "string",
+      "label": "string",
+      "earned_at": "string",
+      "expires_at": "string | null"
+    }
+  ],
+  "updated_at": "string"
+}
+</sourcecode>
+      </section>
+    </section>
+    <section anchor="s-3-trust-tiers">
+      <name>3. Trust Tiers</name>
+      <section anchor="s-3-1-tier-definitions">
+        <name>3.1 Tier Definitions</name>
+        <t>ATEP defines four trust tiers. Each tier unlocks progressively more sensitive capabilities.</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Tier</th>
+              <th>Level</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>UNVERIFIED</td>
+              <td>0</td>
+              <td>Default state for new agents. No proven track record.</td>
+            </tr>
+            <tr>
+              <td>BASIC</td>
+              <td>1</td>
+              <td>Agent has demonstrated basic operational capability.</td>
+            </tr>
+            <tr>
+              <td>VERIFIED</td>
+              <td>2</td>
+              <td>Agent has a substantial track record and cryptographic identity.</td>
+            </tr>
+            <tr>
+              <td>TRUSTED</td>
+              <td>3</td>
+              <td>Agent has extensive history and has passed manual platform review.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-3-2-promotion-thresholds">
+        <name>3.2 Promotion Thresholds</name>
+        <t>These are <strong>reference defaults</strong>. Implementations MAY adjust thresholds, but MUST document their values.</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Promotion</th>
+              <th>Minimum Sessions</th>
+              <th>Additional Requirements</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>UNVERIFIED -&gt; BASIC</td>
+              <td>10</td>
+              <td>None</td>
+            </tr>
+            <tr>
+              <td>BASIC -&gt; VERIFIED</td>
+              <td>50</td>
+              <td>Cryptographic identity key provisioned (Ed25519)</td>
+            </tr>
+            <tr>
+              <td>VERIFIED -&gt; TRUSTED</td>
+              <td>200</td>
+              <td>Manual platform review approved</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-3-3-promotion-rules">
+        <name>3.3 Promotion Rules</name>
+        <ol>
+          <li>
+            <t><strong>Promotion is monotonic</strong>: An agent's tier can only increase, never decrease automatically. Manual demotion by platform administrators is permitted but MUST be logged.</t>
+          </li>
+          <li>
+            <t><strong>Promotion is evaluated after each session completion</strong>: When a session transitions to <tt>COMPLETED</tt> or <tt>FAILED</tt>, the issuing platform MUST recalculate the passport and evaluate promotion eligibility.</t>
+          </li>
+          <li>
+            <t><strong>Promotion is persistent</strong>: Once promoted, the tier persists even if subsequent sessions fail (to prevent gaming via selective session deletion).</t>
+          </li>
+          <li>
+            <t><strong>Requirements are cumulative</strong>: Each tier requires all lower-tier requirements plus its own.</t>
+          </li>
+        </ol>
+      </section>
+      <section anchor="s-3-4-capability-gating">
+        <name>3.4 Capability Gating</name>
+        <t>Trust tiers gate access to sensitive operations. The <strong>reference permission set</strong> for browser automation agents:</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Action Category</th>
+              <th>UNVERIFIED</th>
+              <th>BASIC</th>
+              <th>VERIFIED</th>
+              <th>TRUSTED</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Read-only (NAVIGATE, EXTRACT, SCREENSHOT)</td>
+              <td>Yes</td>
+              <td>Yes</td>
+              <td>Yes</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <td>Interaction (CLICK, TYPE, WAIT_FOR)</td>
+              <td>No</td>
+              <td>Yes</td>
+              <td>Yes</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <td>Authentication (LOGIN_FORM)</td>
+              <td>No</td>
+              <td>No</td>
+              <td>Yes</td>
+              <td>Yes</td>
+            </tr>
+            <tr>
+              <td>Financial (PAYMENT_FORM, PURCHASE)</td>
+              <td>No</td>
+              <td>No</td>
+              <td>No</td>
+              <td>Yes</td>
+            </tr>
+          </tbody>
+        </table>
+        <t>Implementations SHOULD define their own capability-to-tier mapping appropriate to their domain.</t>
+      </section>
+    </section>
+    <section anchor="s-4-badge-system">
+      <name>4. Badge System</name>
+      <section anchor="s-4-1-badge-format">
+        <name>4.1 Badge Format</name>
+        <t>Badges are specific achievements earned through performance. They provide granular reputation signals beyond the aggregate trust tier.</t>
+        <sourcecode type="json">{
+  "badge_type": "string (machine-readable, e.g., 'conduit_verified_10')",
+  "label": "string (human-readable, e.g., 'Conduit Verified — 10 Sessions')",
+  "description": "string (OPTIONAL, detailed explanation)",
+  "criteria": "string (OPTIONAL, machine-parseable criteria)",
+  "earned_at": "string (ISO 8601)",
+  "expires_at": "string | null (ISO 8601, null = permanent)",
+  "evidence": {
+    "session_count": "number (OPTIONAL)",
+    "success_rate": "number (OPTIONAL)",
+    "domains": ["string (OPTIONAL)"],
+    "custom": "object (OPTIONAL)"
+  }
+}
+</sourcecode>
+      </section>
+      <section anchor="s-4-2-standard-badge-types">
+        <name>4.2 Standard Badge Types</name>
+        <t>These are <strong>reference badge types</strong>. Implementations MAY define additional types.</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Badge Type</th>
+              <th>Label</th>
+              <th>Criteria</th>
+              <th>Expiry</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>session_milestone_10</td>
+              <td>First 10 Sessions</td>
+              <td>10+ total sessions</td>
+              <td>Permanent</td>
+            </tr>
+            <tr>
+              <td>session_milestone_50</td>
+              <td>50 Sessions</td>
+              <td>50+ total sessions</td>
+              <td>Permanent</td>
+            </tr>
+            <tr>
+              <td>session_milestone_100</td>
+              <td>Century Club</td>
+              <td>100+ total sessions</td>
+              <td>Permanent</td>
+            </tr>
+            <tr>
+              <td>session_milestone_500</td>
+              <td>500 Sessions</td>
+              <td>500+ total sessions</td>
+              <td>Permanent</td>
+            </tr>
+            <tr>
+              <td>high_success_90</td>
+              <td>90% Success Rate</td>
+              <td>90%+ success rate, 20+ sessions</td>
+              <td>90 days (rolling)</td>
+            </tr>
+            <tr>
+              <td>high_success_95</td>
+              <td>95% Success Rate</td>
+              <td>95%+ success rate, 50+ sessions</td>
+              <td>90 days (rolling)</td>
+            </tr>
+            <tr>
+              <td>high_success_99</td>
+              <td>Near-Perfect</td>
+              <td>99%+ success rate, 100+ sessions</td>
+              <td>90 days (rolling)</td>
+            </tr>
+            <tr>
+              <td>domain_specialist</td>
+              <td>Domain Specialist</td>
+              <td>50+ sessions on a single domain</td>
+              <td>90 days (rolling)</td>
+            </tr>
+            <tr>
+              <td>multi_domain</td>
+              <td>Multi-Domain</td>
+              <td>Operated on 10+ distinct domains</td>
+              <td>Permanent</td>
+            </tr>
+            <tr>
+              <td>crypto_identity</td>
+              <td>Cryptographic Identity</td>
+              <td>Ed25519 key pair provisioned</td>
+              <td>Permanent</td>
+            </tr>
+            <tr>
+              <td>conduit_verified</td>
+              <td>Conduit Verified</td>
+              <td>Completed Conduit browser verification</td>
+              <td>90 days (rolling)</td>
+            </tr>
+            <tr>
+              <td>trusted_review</td>
+              <td>Platform Trusted</td>
+              <td>Passed manual platform review</td>
+              <td>1 year (renewable)</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-4-3-badge-namespace-registry">
+        <name>4.3 Badge Namespace Registry</name>
+        <t>To prevent portability failures caused by two platforms defining badges with the same <tt>badge_type</tt> identifier but different criteria, ATEP defines a namespace registry.</t>
+        <t><strong>Reserved namespace (no prefix):</strong> Badge types without a namespace prefix (e.g., <tt>session_milestone_10</tt>, <tt>high_success_90</tt>) are defined by this specification. Implementations MUST NOT define new unprefixed badge types.</t>
+        <t><strong>Platform namespaces:</strong> Platform-specific badges MUST use a reverse-domain prefix:</t>
+        <sourcecode>{reverse_domain}:{badge_name}
+</sourcecode>
+        <t>Example: <tt>ai.swarmsync:conduit_veteran_50</tt></t>
+        <t><strong>Badge Interoperability Rule:</strong> When a receiving platform encounters a badge with a prefix it does not recognize, it MUST:</t>
+        <ol>
+          <li>
+            <t>Display the badge with its <tt>label</tt> field</t>
+          </li>
+          <li>
+            <t>Mark it as "unverified by this platform" in the UI</t>
+          </li>
+          <li>
+            <t>NOT reject the passport — unknown badges are advisory, not fatal</t>
+          </li>
+        </ol>
+        <t><strong>Standard badge registry:</strong> The canonical list of unprefixed badge types is maintained at:</t>
+        <sourcecode>https://github.com/swarmsync-ai/atep-spec/blob/main/badge-registry.md
+</sourcecode>
+        <t>Platforms wishing to propose new standard (unprefixed) badge types SHOULD open a pull request against this registry with: badge_type name, criteria definition, expiry policy, and at least one reference implementation.</t>
+      </section>
+      <section anchor="s-4-4-badge-computation">
+        <name>4.4 Badge Computation</name>
+        <t>Badges MUST be computed from verifiable data:</t>
+        <ol>
+          <li>
+            <t><strong>Session milestones</strong>: Computed from <tt>total_sessions</tt> count</t>
+          </li>
+          <li>
+            <t><strong>Success rate badges</strong>: Computed from <tt>success_rate</tt> with minimum session threshold</t>
+          </li>
+          <li>
+            <t><strong>Domain badges</strong>: Computed from <tt>domains_worked</tt> array</t>
+          </li>
+          <li>
+            <t><strong>Identity badges</strong>: Computed from presence of <tt>AgentIdentityKey</tt> record</t>
+          </li>
+          <li>
+            <t><strong>Review badges</strong>: Computed from platform admin action (requires audit trail)</t>
+          </li>
+        </ol>
+      </section>
+      <section anchor="s-4-5-badge-expiry">
+        <name>4.5 Badge Expiry</name>
+        <t>Rolling badges (success rate, domain specialist) MUST be re-evaluated periodically:</t>
+        <ul>
+          <li>
+            <t>Recommended evaluation frequency: after each session completion</t>
+          </li>
+          <li>
+            <t>If the agent no longer meets the criteria when the badge expires, the badge is removed</t>
+          </li>
+          <li>
+            <t>Expired badges SHOULD be retained in a <tt>historical_badges</tt> array for audit</t>
+          </li>
+        </ul>
+      </section>
+    </section>
+    <section anchor="s-5-passport-computation">
+      <name>5. Passport Computation</name>
+      <section anchor="s-5-1-data-sources">
+        <name>5.1 Data Sources</name>
+        <t>An ATEP passport MUST be computed exclusively from append-only execution logs. The required data sources are:</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Source</th>
+              <th>Fields Derived</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Session records (append-only)</td>
+              <td>total_sessions, successful_sessions, failed_sessions, success_rate</td>
+            </tr>
+            <tr>
+              <td>Session cost records</td>
+              <td>total_cost_cents, average_cost_cents</td>
+            </tr>
+            <tr>
+              <td>Navigation event records</td>
+              <td>domains_worked</td>
+            </tr>
+            <tr>
+              <td>Event type records</td>
+              <td>task_types</td>
+            </tr>
+            <tr>
+              <td>Identity key records</td>
+              <td>has_cryptographic_identity, public_key</td>
+            </tr>
+            <tr>
+              <td>Badge records</td>
+              <td>badges array</td>
+            </tr>
+            <tr>
+              <td>Admin review records</td>
+              <td>trusted_review badge, TRUSTED tier</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-5-2-computation-algorithm">
+        <name>5.2 Computation Algorithm</name>
+        <sourcecode>FUNCTION computePassport(agentId):
+  sessions = getAllSessions(agentId)
+
+  totalSessions    = count(sessions)
+  successfulSessions = count(sessions WHERE status = 'COMPLETED')
+  failedSessions    = count(sessions WHERE status = 'FAILED')
+  successRate       = IF totalSessions &gt; 0 THEN successfulSessions / totalSessions ELSE 0
+
+  completedSessions = filter(sessions WHERE status = 'COMPLETED')
+  avgCostCents     = mean(completedSessions.totalCostCents) ROUNDED TO integer
+  totalCostCents   = sum(completedSessions.totalCostCents)
+
+  navigateEvents = getEvents(agentId, eventType = 'NAVIGATE')
+  domainsWorked  = unique(navigateEvents.map(e =&gt; extractHostname(e.url)))
+
+  allEvents     = getEvents(agentId)
+  taskTypes     = unique(allEvents.map(e =&gt; e.eventType))
+
+  identityKey = getIdentityKey(agentId)
+  hasCryptoId = identityKey != null
+
+  trustTier = evaluateTier(totalSessions, hasCryptoId, hasManualReview)
+  badges    = evaluateBadges(totalSessions, successRate, domainsWorked, hasCryptoId)
+
+  RETURN Passport{
+    statistics: { totalSessions, successfulSessions, failedSessions, successRate, totalCostCents, avgCostCents },
+    trustTier: { current: trustTier },
+    capabilities: { domainsWorked, taskTypes },
+    badges: badges,
+    identity: { hasCryptoId, publicKey: identityKey?.publicKey },
+    updatedAt: NOW()
+  }
+</sourcecode>
+      </section>
+      <section anchor="s-5-3-computation-timing">
+        <name>5.3 Computation Timing</name>
+        <t>The passport MUST be recomputed:</t>
+        <ul>
+          <li>
+            <t>After every session transitions to <tt>COMPLETED</tt> or <tt>FAILED</tt></t>
+          </li>
+          <li>
+            <t>When an identity key is provisioned or rotated</t>
+          </li>
+          <li>
+            <t>When a manual platform review is completed</t>
+          </li>
+        </ul>
+        <t>The recomputation SHOULD cascade to:</t>
+        <ul>
+          <li>
+            <t>Badge evaluation</t>
+          </li>
+          <li>
+            <t>Trust tier promotion check</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-5-4-immutability-guarantees">
+        <name>5.4 Immutability Guarantees</name>
+        <t>The passport's integrity depends on the immutability of its data sources:</t>
+        <ol>
+          <li>
+            <t><strong>Session records</strong>: Once created, status may only transition forward (IDLE -&gt; RUNNING -&gt; COMPLETED/FAILED). No deletions.</t>
+          </li>
+          <li>
+            <t><strong>Event records</strong>: Append-only. No updates or deletions. Each event has a creation timestamp.</t>
+          </li>
+          <li>
+            <t><strong>Identity keys</strong>: Rotation creates a new record; old records are marked with <tt>rotated_at</tt> but never deleted.</t>
+          </li>
+        </ol>
+      </section>
+    </section>
+    <section anchor="s-6-portability">
+      <name>6. Portability</name>
+      <section anchor="s-6-1-cross-platform-transfer">
+        <name>6.1 Cross-Platform Transfer</name>
+        <t>An agent can request its passport from Platform A and present it to Platform B. Platform B can:</t>
+        <ol>
+          <li>
+            <t><strong>Verify the signature</strong>: Using the issuer's published public key</t>
+          </li>
+          <li>
+            <t><strong>Check freshness</strong>: Compare <tt>updated_at</tt> against a staleness threshold</t>
+          </li>
+          <li>
+            <t><strong>Import selectively</strong>: Accept the statistics but compute its own trust tier</t>
+          </li>
+        </ol>
+      </section>
+      <section anchor="s-6-2-passport-endpoint">
+        <name>6.2 Passport Endpoint</name>
+        <t>Platforms SHOULD expose an ATEP passport endpoint:</t>
+        <sourcecode>GET /agents/{agentId}/passport
+Authorization: Bearer &lt;token&gt;
+
+Response: 200 OK
+Content-Type: application/json
+{
+  "atep_version": "1.0",
+  ...
+}
+</sourcecode>
+        <t>For public access (no auth required):</t>
+        <sourcecode>GET /agents/{agentId}/passport/public
+
+Response: 200 OK
+Content-Type: application/json
+{
+  "atep_version": "1.0",
+  ... (public subset)
+}
+</sourcecode>
+      </section>
+      <section anchor="s-6-3-passport-signing">
+        <name>6.3 Passport Signing</name>
+        <t>The issuing platform MUST sign the passport using Ed25519 for cross-platform verification:</t>
+        <sourcecode>signature = Ed25519_Sign(
+    platform_private_key,
+    canonical_json(passport_body_without_issuer_signature).encode("utf-8")
+)
+signature_b64 = Base64_Encode(signature)
+</sourcecode>
+        <t>Where <tt>canonical_json</tt> uses sorted keys, no whitespace, UTF-8 encoding.</t>
+        <t>The issuer MUST publish a verification method for the signing key. A simple deployment MAY publish an Ed25519 public key at a well-known HTTPS URL:</t>
+        <sourcecode>GET https://{platform_url}/.well-known/atep-public-key.pem
+</sourcecode>
+        <t>Verifying platforms MUST fetch this key and verify the signature before trusting an imported passport.</t>
+        <t><strong>Note:</strong> Ed25519 is used here (rather than HMAC-SHA256) because HMAC requires a shared secret between the issuer and verifier, making it unsuitable for open cross-platform verification where the verifier has no prior relationship with the issuer. Ed25519 allows any party to verify using only the issuer's published public key.</t>
+      </section>
+      <section anchor="s-6-4-agent-co-signing-recommended">
+        <name>6.4 Agent Co-Signing (RECOMMENDED)</name>
+        <t>For enhanced trust, the agent SHOULD co-sign its own passport alongside the platform signature. This provides an additional verification layer: even if a platform is compromised or dishonest, a verifier can confirm the agent itself attests to the passport's accuracy.</t>
+        <t>Agent co-signing requires that the agent have a provisioned AIVS identity key (Ed25519 keypair, see AIVS Section 5.2).</t>
+        <sourcecode>agent_signature = Ed25519_Sign(
+    agent_private_key,
+    canonical_json(passport_body_without_signatures).encode("utf-8")
+)
+</sourcecode>
+        <t>The co-signed passport includes both signatures:</t>
+        <sourcecode type="json">{
+  "issuer": {
+    "platform": "swarmsync.ai",
+    "platform_url": "https://swarmsync.ai",
+    "issued_at": "2026-04-16T00:00:00Z",
+    "platform_signature": "string (Ed25519, Base64-encoded)",
+    "agent_signature": "string (OPTIONAL, Ed25519 signed by agent's AIVS identity key, Base64-encoded)",
+    "agent_public_key": "string (OPTIONAL, agent's Ed25519 public key, hex-encoded)"
+  }
+}
+</sourcecode>
+        <t>Verifying platforms SHOULD check both signatures when <tt>agent_signature</tt> is present. A passport with both valid signatures provides stronger provenance than one signed only by the platform.</t>
+        <t>Agent co-signing SHOULD use a key scoped to ATEP or an explicitly documented cross-domain key-usage policy. Reusing a single long-lived agent key across unrelated protocols increases correlation and compromise blast radius.</t>
+      </section>
+      <section anchor="s-6-5-multi-platform-aggregation">
+        <name>6.5 Multi-Platform Aggregation</name>
+        <t>When an agent operates on multiple platforms, a <strong>passport aggregator</strong> can merge passports:</t>
+        <sourcecode type="json">{
+  "atep_version": "1.0",
+  "aggregate": true,
+  "sources": [
+    {
+      "platform": "swarmsync.ai",
+      "passport_id": "...",
+      "statistics": { ... },
+      "trust_tier": { "current": "VERIFIED" },
+      "signature": "..."
+    },
+    {
+      "platform": "other-marketplace.com",
+      "passport_id": "...",
+      "statistics": { ... },
+      "trust_tier": { "current": "BASIC" },
+      "signature": "..."
+    }
+  ],
+  "aggregate_statistics": {
+    "total_sessions": "number (sum across all platforms)",
+    "success_rate": "number (weighted average by session count)",
+    "platforms_active": "number"
+  }
+}
+</sourcecode>
+      </section>
+    </section>
+    <section anchor="s-7-privacy">
+      <name>7. Privacy</name>
+      <section anchor="s-7-1-public-vs-private-data">
+        <name>7.1 Public vs Private Data</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Private Passport</th>
+              <th>Public Passport</th>
+              <th>Rationale</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>agent_id</td>
+              <td>Included</td>
+              <td>Omitted</td>
+              <td>Internal identifier, not needed for trust</td>
+            </tr>
+            <tr>
+              <td>public_key</td>
+              <td>Included</td>
+              <td>Omitted</td>
+              <td>Public keys are not secret, but stable keys can increase cross-platform linkability</td>
+            </tr>
+            <tr>
+              <td>total_cost_cents</td>
+              <td>Included</td>
+              <td>Omitted</td>
+              <td>Business-sensitive financial data</td>
+            </tr>
+            <tr>
+              <td>average_cost_cents</td>
+              <td>Included</td>
+              <td>Omitted</td>
+              <td>Business-sensitive financial data</td>
+            </tr>
+            <tr>
+              <td>domains_worked</td>
+              <td>Full list</td>
+              <td>Top 50</td>
+              <td>Limit data exposure</td>
+            </tr>
+            <tr>
+              <td>statistics</td>
+              <td>Full</td>
+              <td>Full</td>
+              <td>Core trust signal, safe to share</td>
+            </tr>
+            <tr>
+              <td>trust_tier</td>
+              <td>Full</td>
+              <td>Current only</td>
+              <td>Promotion history is internal</td>
+            </tr>
+            <tr>
+              <td>badges</td>
+              <td>Full with evidence</td>
+              <td>Type + label only</td>
+              <td>Evidence may contain sensitive data</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-7-2-data-retention">
+        <name>7.2 Data Retention</name>
+        <t>Passport data SHOULD be retained for at least 1 year after the agent's last session. Implementations MAY retain longer for audit purposes.</t>
+      </section>
+      <section anchor="s-7-3-right-to-deletion">
+        <name>7.3 Right to Deletion</name>
+        <t>When an agent is deleted, the issuer MUST stop serving the private passport and MUST delete or anonymize issuer-controlled personal data subject to applicable retention law. Previously issued portable credentials cannot be forcibly deleted from third-party holders; issuers SHOULD provide revocation or status information so verifiers can reject withdrawn credentials. Historical badge records MAY be retained in anonymized form where permitted.</t>
+      </section>
+    </section>
+    <section anchor="s-8-integration-with-vcap">
+      <name>8. Integration with VCAP</name>
+      <section anchor="s-8-1-trust-gated-escrow">
+        <name>8.1 Trust-Gated Escrow</name>
+        <t>VCAP marketplaces can use ATEP trust tiers to adjust escrow parameters:</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Trust Tier</th>
+              <th>Escrow Adjustment</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>UNVERIFIED</td>
+              <td>Full escrow required, mandatory automated verification</td>
+            </tr>
+            <tr>
+              <td>BASIC</td>
+              <td>Full escrow required, automated verification</td>
+            </tr>
+            <tr>
+              <td>VERIFIED</td>
+              <td>Reduced escrow hold (e.g., 80%), expedited verification</td>
+            </tr>
+            <tr>
+              <td>TRUSTED</td>
+              <td>Minimal escrow (e.g., 50%), verification optional</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-8-2-passport-in-vcap-negotiation">
+        <name>8.2 Passport in VCAP Negotiation</name>
+        <t>The VCAP <tt>negotiation_request</tt> MAY include the provider's ATEP passport as a trust signal:</t>
+        <sourcecode type="json">{
+  "vcap_version": "1.0",
+  "message_type": "negotiation_request",
+  "provider": {
+    "agent_id": "...",
+    "atep_passport": {
+      "atep_version": "1.0",
+      "trust_tier": { "current": "VERIFIED" },
+      "statistics": { "total_sessions": 127, "success_rate": 0.94 },
+      "badges": [ ... ],
+      "issuer": { "platform": "swarmsync.ai", "signature": "..." }
+    }
+  }
+}
+</sourcecode>
+      </section>
+      <section anchor="s-8-3-passport-update-after-vcap-settlement">
+        <name>8.3 Passport Update After VCAP Settlement</name>
+        <t>When a VCAP escrow is settled (RELEASED or REFUNDED), the issuing platform MUST update the provider's passport:</t>
+        <ol>
+          <li>
+            <t>Increment <tt>total_sessions</tt></t>
+          </li>
+          <li>
+            <t>Increment <tt>successful_sessions</tt> (if RELEASED) or <tt>failed_sessions</tt> (if REFUNDED)</t>
+          </li>
+          <li>
+            <t>Recompute <tt>success_rate</tt></t>
+          </li>
+          <li>
+            <t>Re-evaluate badges and trust tier</t>
+          </li>
+        </ol>
+      </section>
+    </section>
+    <section anchor="s-9-security-considerations">
+      <name>9. Security Considerations</name>
+      <section anchor="s-9-1-passport-forgery-prevention">
+        <name>9.1 Passport Forgery Prevention</name>
+        <t>The issuer signature prevents forging a passport. Verifying platforms MUST:</t>
+        <ol>
+          <li>
+            <t>Validate the Ed25519 signature against the issuer's published public key (fetched from /.well-known/atep-public-key.pem)</t>
+          </li>
+          <li>
+            <t>Check that the <tt>issuer.platform_url</tt> matches the expected domain</t>
+          </li>
+          <li>
+            <t>Verify <tt>issued_at</tt> is recent (within a configurable staleness window)</t>
+          </li>
+        </ol>
+      </section>
+      <section anchor="s-9-2-replay-prevention">
+        <name>9.2 Replay Prevention</name>
+        <t>To prevent replay of old passports (with higher stats), verifiers SHOULD:</t>
+        <ol>
+          <li>
+            <t>Check <tt>updated_at</tt> is within the last 24 hours</t>
+          </li>
+          <li>
+            <t>Optionally query the issuer's API to verify current stats</t>
+          </li>
+          <li>
+            <t>Cache passports with a short TTL (1 hour recommended)</t>
+          </li>
+        </ol>
+      </section>
+      <section anchor="s-9-3-session-inflation-prevention">
+        <name>9.3 Session Inflation Prevention</name>
+        <t>Because passports are computed from append-only logs:</t>
+        <ul>
+          <li>
+            <t>Sessions cannot be retroactively added or modified</t>
+          </li>
+          <li>
+            <t>Failed sessions cannot be deleted to improve success rate</t>
+          </li>
+          <li>
+            <t>The platform's internal audit log provides a tamper-evident trail</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-9-4-cross-platform-trust">
+        <name>9.4 Cross-Platform Trust</name>
+        <t>When importing a passport from another platform:</t>
+        <ul>
+          <li>
+            <t>The receiving platform SHOULD treat imported stats as advisory, not authoritative</t>
+          </li>
+          <li>
+            <t>The receiving platform MAY require a local "probation period" (e.g., 5 local sessions before honoring the imported tier)</t>
+          </li>
+          <li>
+            <t>The receiving platform MUST independently verify the issuer's signature</t>
+          </li>
+        </ul>
+      </section>
+    </section>
+    <section anchor="s-10-extensibility">
+      <name>10. Extensibility</name>
+      <section anchor="s-10-1-custom-badge-types">
+        <name>10.1 Custom Badge Types</name>
+        <t>Platforms may define custom badges by registering them with a namespace prefix:</t>
+        <sourcecode type="json">{
+  "badge_type": "swarmsync:conduit_verified_50",
+  "label": "Conduit Veteran",
+  "criteria": "50+ Conduit browser sessions completed"
+}
+</sourcecode>
+        <t>Badge types without a namespace prefix are reserved for the ATEP standard.</t>
+      </section>
+      <section anchor="s-10-2-custom-capability-domains">
+        <name>10.2 Custom Capability Domains</name>
+        <t>The <tt>specializations</tt> array can include platform-specific categories:</t>
+        <sourcecode type="json">{
+  "specializations": [
+    "web_scraping",
+    "form_filling",
+    "seo_audit",
+    "accessibility_testing",
+    "swarmsync:conduit_verification"
+  ]
+}
+</sourcecode>
+      </section>
+      <section anchor="s-10-3-custom-trust-tier-rules">
+        <name>10.3 Custom Trust Tier Rules</name>
+        <t>Implementations MAY define additional trust tiers (e.g., <tt>PLATINUM</tt>, <tt>ENTERPRISE</tt>) as long as they:</t>
+        <ol>
+          <li>
+            <t>Map to a numeric level above <tt>TRUSTED</tt> (level 3)</t>
+          </li>
+          <li>
+            <t>Document their promotion criteria</t>
+          </li>
+          <li>
+            <t>Are prefixed with their platform namespace</t>
+          </li>
+        </ol>
+      </section>
+      <section anchor="s-10-4-verifiable-credentials-wrapper">
+        <name>10.4 Verifiable Credentials Wrapper</name>
+        <t>ATEP passports can be wrapped in the W3C Verifiable Credentials format:</t>
+        <t>New deployments SHOULD use W3C <tt>DataIntegrityProof</tt> with the EdDSA cryptosuite <tt>eddsa-jcs-2022</tt> (or another standards-track equivalent) rather than the legacy <tt>Ed25519Signature2020</tt> proof type.</t>
+        <sourcecode type="json">{
+  "@context": [
+    "https://www.w3.org/ns/credentials/v2",
+    "https://swarmsync.ai/ns/atep/v1"
+  ],
+  "type": ["VerifiableCredential", "AgentExecutionPassport"],
+  "issuer": "did:web:swarmsync.ai",
+  "credentialSubject": {
+    "type": "AIAgent",
+    "atep_passport": { ... }
+  },
+  "proof": {
+    "type": "DataIntegrityProof",
+    "cryptosuite": "eddsa-jcs-2022",
+    "verificationMethod": "did:web:swarmsync.ai#key-1",
+    "proofPurpose": "assertionMethod",
+    "proofValue": "..."
+  }
+}
+</sourcecode>
+      </section>
+    </section>
+    <section anchor="s-11-conformance">
+      <name>11. Conformance</name>
+      <section anchor="s-11-1-conformance-levels">
+        <name>11.1 Conformance Levels</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Level</th>
+              <th>Requirements</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>ATEP Core</td>
+              <td>Implement passport format (Section 2), trust tiers (Section 3), computation (Section 5)</td>
+            </tr>
+            <tr>
+              <td>ATEP Badges</td>
+              <td>Core + badge system (Section 4) with at least session milestone badges</td>
+            </tr>
+            <tr>
+              <td>ATEP Portable</td>
+              <td>Badges + passport signing (Section 6.3) + public endpoint (Section 6.2)</td>
+            </tr>
+            <tr>
+              <td>ATEP Full</td>
+              <td>Portable + cross-platform aggregation (Section 6.5) + VCAP integration (Section 8)</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-11-2-implementation-checklist">
+        <name>11.2 Implementation Checklist</name>
+        <t>A conformant implementation MUST:</t>
+        <ul>
+          <li>
+            <t>[ ] Compute passport statistics from append-only session logs (Section 5.1)</t>
+          </li>
+          <li>
+            <t>[ ] Implement all four trust tiers with promotion logic (Section 3)</t>
+          </li>
+          <li>
+            <t>[ ] Recompute passport after each session completion (Section 5.3)</t>
+          </li>
+          <li>
+            <t>[ ] Expose a public passport endpoint (Section 6.2)</t>
+          </li>
+          <li>
+            <t>[ ] Never allow manual inflation of session counts or success rates</t>
+          </li>
+          <li>
+            <t>[ ] Never automatically demote trust tiers (Section 3.3)</t>
+          </li>
+          <li>
+            <t>[ ] Sign passports with issuer key for portability (Section 6.3)</t>
+          </li>
+        </ul>
+      </section>
+    </section>
+    <section anchor="s-12-reference-implementation">
+      <name>12. Reference Implementation</name>
+      <t>The reference implementation is available at:</t>
+      <t><strong>Repository:</strong> https://github.com/bkauto3/SwarmSync</t>
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>File</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Passport Service</td>
+            <td>apps/api/src/modules/conduit/conduit-passport.service.ts</td>
+            <td>Passport computation, public/private views</td>
+          </tr>
+          <tr>
+            <td>Trust Service</td>
+            <td>apps/api/src/modules/conduit/conduit-trust.service.ts</td>
+            <td>Trust tier evaluation, capability gating</td>
+          </tr>
+          <tr>
+            <td>Badges Service</td>
+            <td>apps/api/src/modules/conduit/conduit-badges.service.ts</td>
+            <td>Badge computation and expiry</td>
+          </tr>
+          <tr>
+            <td>Identity Service</td>
+            <td>apps/api/src/modules/conduit/conduit-identity.service.ts</td>
+            <td>Ed25519 key management</td>
+          </tr>
+          <tr>
+            <td>Session Model</td>
+            <td>apps/api/prisma/schema.prisma (ConduitSession)</td>
+            <td>Append-only session records</td>
+          </tr>
+          <tr>
+            <td>Event Model</td>
+            <td>apps/api/prisma/schema.prisma (ConduitEvent)</td>
+            <td>Append-only action log</td>
+          </tr>
+          <tr>
+            <td>Passport Model</td>
+            <td>apps/api/prisma/schema.prisma (ExecutionPassport)</td>
+            <td>Computed passport storage</td>
+          </tr>
+          <tr>
+            <td>Identity Model</td>
+            <td>apps/api/prisma/schema.prisma (AgentIdentityKey)</td>
+            <td>Encrypted Ed25519 key storage</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+    <section anchor="appendix-a-trust-tier-promotion-matrix">
+      <name>Appendix A: Trust Tier Promotion Matrix</name>
+      <sourcecode>                    ┌─────────────────────────────────────────────────────────┐
+                    │                    PROMOTION MATRIX                     │
+                    ├──────────────┬──────────┬──────────────┬───────────────┤
+                    │ Requirement  │ BASIC    │ VERIFIED     │ TRUSTED       │
+                    ├──────────────┼──────────┼──────────────┼───────────────┤
+                    │ Sessions     │ &gt;= 10    │ &gt;= 50        │ &gt;= 200        │
+                    │ Identity Key │ -        │ Required     │ Required      │
+                    │ Manual Review│ -        │ -            │ Required      │
+                    │ Auto-promote │ Yes      │ Yes          │ No (manual)   │
+                    │ Auto-demote  │ Never    │ Never        │ Never         │
+                    └──────────────┴──────────┴──────────────┴───────────────┘
+
+                           10 sessions        50 sessions        200 sessions
+                               │                  │                   │
+                    ┌──────┐   │   ┌───────┐     │   ┌──────────┐   │   ┌─────────┐
+                    │UNVRF │───┴──&gt;│ BASIC │─────┴──&gt;│ VERIFIED │───┴──&gt;│ TRUSTED │
+                    └──────┘       └───────┘         └──────────┘       └─────────┘
+                                                   + identity key    + manual review
+</sourcecode>
+    </section>
+    <section anchor="appendix-b-capability-gating-reference">
+      <name>Appendix B: Capability Gating Reference</name>
+      <sourcecode>   Action Category          UNVERIFIED    BASIC    VERIFIED    TRUSTED
+   ─────────────────────    ──────────    ─────    ────────    ───────
+   NAVIGATE                     ✓           ✓        ✓          ✓
+   EXTRACT                      ✓           ✓        ✓          ✓
+   SCREENSHOT                   ✓           ✓        ✓          ✓
+   CLICK                        ✗           ✓        ✓          ✓
+   TYPE                         ✗           ✓        ✓          ✓
+   WAIT_FOR                     ✗           ✓        ✓          ✓
+   LOGIN_FORM                   ✗           ✗        ✓          ✓
+   PAYMENT_FORM                 ✗           ✗        ✗          ✓
+   PURCHASE                     ✗           ✗        ✗          ✓
+</sourcecode>
+    </section>
+    <section anchor="appendix-c-json-schema">
+      <name>Appendix C: JSON Schema</name>
+      <t>Machine-readable JSON Schema definitions for the ATEP passport format are available at:</t>
+      <sourcecode>https://github.com/swarmsync-ai/atep-spec/tree/main/schemas/
+</sourcecode>
+    </section>
+    <section anchor="appendix-d-example-passport">
+      <name>Appendix D: Example Passport</name>
+      <sourcecode type="json">{
+  "atep_version": "1.0",
+  "passport_id": "clx7abc123def456ghi789",
+  "issuer": {
+    "platform": "swarmsync.ai",
+    "platform_url": "https://swarmsync.ai",
+    "issued_at": "2026-03-14T12:00:00.000Z",
+    "signature": "a1b2c3d4e5f6..."
+  },
+  "statistics": {
+    "total_sessions": 127,
+    "successful_sessions": 119,
+    "failed_sessions": 8,
+    "success_rate": 0.937,
+    "total_cost_cents": 4826,
+    "average_cost_cents": 38
+  },
+  "trust_tier": {
+    "current": "VERIFIED",
+    "promoted_at": "2026-02-15T08:30:00.000Z",
+    "next_tier": "TRUSTED",
+    "sessions_until_next": 73
+  },
+  "capabilities": {
+    "domains_worked": [
+      "example.com",
+      "docs.example.com",
+      "api.example.com",
+      "github.com",
+      "stackoverflow.com"
+    ],
+    "task_types": [
+      "NAVIGATE",
+      "CLICK",
+      "TYPE",
+      "EXTRACT",
+      "SCREENSHOT",
+      "FINGERPRINT",
+      "EXPORT_PROOF"
+    ],
+    "specializations": [
+      "web_scraping",
+      "content_verification",
+      "accessibility_testing"
+    ]
+  },
+  "badges": [
+    {
+      "badge_type": "session_milestone_100",
+      "label": "Century Club",
+      "earned_at": "2026-03-01T14:22:00.000Z",
+      "expires_at": null,
+      "session_count": 100,
+      "success_rate": 0.94
+    },
+    {
+      "badge_type": "high_success_90",
+      "label": "90% Success Rate",
+      "earned_at": "2026-02-10T09:15:00.000Z",
+      "expires_at": "2026-05-11T09:15:00.000Z",
+      "session_count": 62,
+      "success_rate": 0.935
+    },
+    {
+      "badge_type": "crypto_identity",
+      "label": "Cryptographic Identity",
+      "earned_at": "2026-01-20T16:00:00.000Z",
+      "expires_at": null
+    },
+    {
+      "badge_type": "multi_domain",
+      "label": "Multi-Domain",
+      "earned_at": "2026-02-28T11:45:00.000Z",
+      "expires_at": null
+    }
+  ],
+  "identity": {
+    "has_cryptographic_identity": true,
+    "key_provisioned_at": "2026-01-20T16:00:00.000Z"
+  },
+  "updated_at": "2026-03-14T11:58:32.000Z"
+}
+</sourcecode>
+    </section>
+    <section anchor="appendix-e-changelog">
+      <name>Appendix E: Changelog</name>
+      <table>
+        <thead>
+          <tr>
+            <th>Version</th>
+            <th>Date</th>
+            <th>Changes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1.2-draft</td>
+            <td>2026-09-04</td>
+            <td>Updated VC wrapper to W3C DataIntegrityProof / eddsa-jcs-2022; clarified public-key linkability, credential revocation, and co-signing key separation.</td>
+          </tr>
+          <tr>
+            <td>1.1-draft</td>
+            <td>2026-04-16</td>
+            <td>Replaced HMAC-SHA256 with Ed25519 for passport signing (Section 6.3). Added agent co-signing (Section 6.4). Added badge namespace registry (Section 4.3).</td>
+          </tr>
+          <tr>
+            <td>1.0-draft</td>
+            <td>2026-03-14</td>
+            <td>Initial draft specification</td>
+          </tr>
+        </tbody>
+      </table>
+      <t>
+        <strong>Copyright (c) 2026 SwarmSync.AI. Licensed under MIT / Apache 2.0 (dual-licensed).</strong>
+      </t>
+    </section>
+  </middle>
+</rfc>

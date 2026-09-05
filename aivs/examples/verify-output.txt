@@ -1,0 +1,17 @@
+$ cd session_proof && python verify.py
+
+Chain OK: 5 actions verified
+  Row 1 browser.navigate  cbee9546...0dae6de  OK
+  Row 2 browser.extract   9dd4adac...8c89448  OK
+  Row 3 browser.click     92795889...8b3ca46  OK
+  Row 4 browser.extract   d5cd7a97...8644e32  OK
+  Row 5 browser.screenshot cac57a0c...ecb6674  OK
+Signature: SKIP (Ed25519 signing not available; hash chain integrity confirmed)
+Session:  sess-d4e7f9a2b1c8
+Exported: 2026-03-14T15:30:45Z
+Actions:  5
+Cost:     11 cents total
+
+VERIFIED: This session proof is intact and unmodified.
+
+Exit code: 0

@@ -1,0 +1,1343 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rfc version="3" ipr="trust200902" docName="draft-stone-aivs-01" category="info" submissionType="independent" xml:lang="en" tocInclude="true" sortRefs="true" symRefs="true">
+  <front>
+    <title abbrev="AIVS">AIVS: Agentic Integrity Verification Standard</title>
+    <seriesInfo name="Internet-Draft" value="draft-stone-aivs-01"/>
+    <author fullname="Ben Stone" initials="B." surname="Stone">
+      <organization>SwarmSync.AI</organization>
+      <address>
+        <email>benstone@swarmsync.ai</email>
+        <uri>https://swarmsync.ai</uri>
+      </address>
+    </author>
+    <date year="2026" month="September" day="4"/>
+    <area>Applications</area>
+    <workgroup>Individual Submission</workgroup>
+    <keyword>AI agents</keyword>
+    <keyword>audit log</keyword>
+    <keyword>integrity verification</keyword>
+    <keyword>Ed25519</keyword>
+    <abstract>
+      <t>The Agentic Integrity Verification Standard (AIVS) defines a portable, self-verifiable archive format for cryptographic proof of AI agent sessions. An AIVS bundle is a gzip-compressed tar archive containing a SHA-256 hash-chained audit log, an Ed25519 digital signature over the chain, a machine-readable manifest, and an embedded verification script that requires only Python 3 standard library to execute.</t>
+      <t>AIVS also defines <strong>AIVS-Micro</strong>: a minimal 6-field attestation (~200 bytes) for continuous monitoring, embedded widgets, and API responses where a full session bundle is not required.</t>
+      <t>AIVS enables any party to independently verify that:</t>
+      <ol>
+        <li>
+          <t>Every action in the session is accounted for and unmodified (hash chain integrity)</t>
+        </li>
+        <li>
+          <t>No actions have been inserted, deleted, or reordered (sequential chaining)</t>
+        </li>
+        <li>
+          <t>The session was produced by a specific cryptographic identity (Ed25519 signature)</t>
+        </li>
+        <li>
+          <t>All of the above can be verified offline, without network access, and without installing any software beyond Python 3 (self-verification)</t>
+        </li>
+      </ol>
+    </abstract>
+  </front>
+  <middle>
+    <section anchor="s-1-motivation">
+      <name>1. Motivation</name>
+      <section anchor="s-1-1-problem-statement">
+        <name>1.1 Problem Statement</name>
+        <t>AI agents increasingly perform consequential actions on behalf of humans: navigating websites, filling forms, executing JavaScript, extracting data, and making purchases. Existing observability platforms (OpenTelemetry, LangSmith, Langfuse) log these actions but provide no cryptographic guarantees that the logs are complete, unmodified, or authentic.</t>
+        <t>Regulatory frameworks mandate audit trails but do not prescribe formats:</t>
+        <ul>
+          <li>
+            <t><strong>EU AI Act Article 19</strong> requires automatically generated logs for high-risk AI systems but specifies no format.</t>
+          </li>
+          <li>
+            <t><strong>ISO/IEC 42001:2023 Annex A.6.2.8</strong> requires event logging but defines no data structure.</t>
+          </li>
+          <li>
+            <t><strong>NIST AI RMF</strong> requires documentation and audit trails but deliberately avoids prescribing formats.</t>
+          </li>
+        </ul>
+        <t>This creates a gap: organizations that must prove what their AI agents did have no standard way to produce, exchange, or verify that proof.</t>
+      </section>
+      <section anchor="s-1-2-design-goals">
+        <name>1.2 Design Goals</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Goal</th>
+              <th>Rationale</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Self-verifiable</td>
+              <td>Proof bundles must be verifiable without contacting any server, blockchain, or authority.</td>
+            </tr>
+            <tr>
+              <td>Portable</td>
+              <td>A single file that can be emailed, stored, or submitted to any system.</td>
+            </tr>
+            <tr>
+              <td>Tamper-evident</td>
+              <td>Modifying any action in the log must be detectable.</td>
+            </tr>
+            <tr>
+              <td>Zero dependencies</td>
+              <td>Verification must require only Python 3 standard library. Signature verification MAY use the cryptography library.</td>
+            </tr>
+            <tr>
+              <td>Session-level</td>
+              <td>Covers an entire session (sequence of actions), not individual action receipts.</td>
+            </tr>
+            <tr>
+              <td>Lightweight profile</td>
+              <td>AIVS-Micro provides a ~200-byte attestation for high-frequency monitoring without full bundle overhead.</td>
+            </tr>
+            <tr>
+              <td>Domain-agnostic</td>
+              <td>Applicable to any AI agent performing any type of action, not limited to commerce, trading, or specific tools.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-1-3-relationship-to-existing-standards">
+        <name>1.3 Relationship to Existing Standards</name>
+        <t>AIVS is complementary to, not competitive with, existing work:</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Standard</th>
+              <th>Scope</th>
+              <th>AIVS Relationship</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>W3C Verifiable Credentials 2.0</td>
+              <td>Identity claims</td>
+              <td>AIVS bundles could be wrapped as a VC credentialSubject</td>
+            </tr>
+            <tr>
+              <td>W3C Data Integrity EdDSA v1.0</td>
+              <td>Ed25519 VC proof format</td>
+              <td>AIVS identities MAY be represented with DataIntegrityProof using eddsa-jcs-2022</td>
+            </tr>
+            <tr>
+              <td>IETF SCITT (draft-ietf-scitt-architecture)</td>
+              <td>Supply chain transparency logs</td>
+              <td>AIVS bundles could be registered as SCITT signed statements</td>
+            </tr>
+            <tr>
+              <td>C2PA v2.2</td>
+              <td>Media asset provenance</td>
+              <td>AIVS applies the same manifest-chain concept to agent actions</td>
+            </tr>
+            <tr>
+              <td>VAP (draft-ailex-vap-legal-ai-provenance)</td>
+              <td>AI decision provenance for regulated industries</td>
+              <td>AIVS covers interactive agent sessions (browser, tool calls); VAP covers model decision trails for legal/regulatory filing. Non-overlapping scope.</td>
+            </tr>
+            <tr>
+              <td>Agent Action Receipts (AAR)</td>
+              <td>Individual action receipts</td>
+              <td>AIVS provides session-level aggregation of action-level records</td>
+            </tr>
+            <tr>
+              <td>Certificate Transparency (RFC 6962)</td>
+              <td>Append-only Merkle logs</td>
+              <td>AIVS's hash chain is a simplified linear variant; Merkle tree extension is possible</td>
+            </tr>
+            <tr>
+              <td>EU AI Act Article 19</td>
+              <td>Audit log requirements</td>
+              <td>AIVS is a concrete format that satisfies Article 19's content requirements</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+    <section anchor="s-2-terminology">
+      <name>2. Terminology</name>
+      <table>
+        <thead>
+          <tr>
+            <th>Term</th>
+            <th>Definition</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Session</td>
+            <td>A bounded sequence of actions performed by a single AI agent instance, identified by a session_id.</td>
+          </tr>
+          <tr>
+            <td>Action</td>
+            <td>A single operation performed by the agent (e.g., navigate to URL, click element, execute JavaScript).</td>
+          </tr>
+          <tr>
+            <td>Audit Row</td>
+            <td>A JSON object recording one action with its inputs, outputs, timestamp, cost, and hash chain fields.</td>
+          </tr>
+          <tr>
+            <td>Hash Chain</td>
+            <td>A sequence of audit rows where each row's hash depends on the previous row's hash, forming a tamper-evident chain.</td>
+          </tr>
+          <tr>
+            <td>Chain Hash</td>
+            <td>A single SHA-256 hash computed over all row hashes, serving as a fingerprint of the entire session.</td>
+          </tr>
+          <tr>
+            <td>Proof Bundle</td>
+            <td>A .tar.gz archive containing the audit log, signature, manifest, public key, and verifier script. Also called an AIVS Full Bundle.</td>
+          </tr>
+          <tr>
+            <td>AIVS-Micro</td>
+            <td>A minimal 6-field JSON proof (~200 bytes) for a single-URL scan attestation.</td>
+          </tr>
+          <tr>
+            <td>Identity Key</td>
+            <td>An Ed25519 keypair used to sign the chain hash or micro-proof payload.</td>
+          </tr>
+          <tr>
+            <td>Scanner Version Hash</td>
+            <td>SHA-256 of the scanner implementation file, binding a proof to a specific code version.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+    <section anchor="s-3-hash-chain-specification">
+      <name>3. Hash Chain Specification</name>
+      <section anchor="s-3-1-row-hash-computation">
+        <name>3.1 Row Hash Computation</name>
+        <t>Each audit row is identified by a deterministic SHA-256 hash. The hash input is a canonical JSON object serialized with sorted keys, no whitespace, UTF-8 encoding:</t>
+        <sourcecode>row_hash = SHA-256(
+    canonical_json({
+        "row_id":      row_id,
+        "session_id":  session_id,
+        "action_type": action_type,
+        "tool_name":   tool_name,
+        "cost_cents":  cost_cents,
+        "timestamp":   timestamp,
+        "prev_hash":   prev_hash
+    })
+)
+</sourcecode>
+        <t>Where <tt>canonical_json</tt> means: object keys sorted alphabetically, no whitespace between tokens, UTF-8 encoding, no trailing newline.</t>
+        <t>The hash is represented as a lowercase hexadecimal string (64 characters).</t>
+        <t><strong>Migration note (v1.0 → v1.1):</strong> Prior to v1.1, the hash input used colon-separated field concatenation. Implementations MUST check the <tt>aivs_version</tt> field in <tt>manifest.json</tt> to determine which serialization to apply during verification.</t>
+      </section>
+      <section anchor="s-3-2-field-definitions">
+        <name>3.2 Field Definitions</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Type</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>row_id</td>
+              <td>Integer</td>
+              <td>Monotonically increasing row identifier (1-indexed).</td>
+            </tr>
+            <tr>
+              <td>session_id</td>
+              <td>String</td>
+              <td>Unique identifier for the session.</td>
+            </tr>
+            <tr>
+              <td>action_type</td>
+              <td>String</td>
+              <td>Classification of the action. Default: "tool_call".</td>
+            </tr>
+            <tr>
+              <td>tool_name</td>
+              <td>String</td>
+              <td>Namespaced tool identifier (e.g., "browser.navigate", "browser.eval").</td>
+            </tr>
+            <tr>
+              <td>cost_cents</td>
+              <td>Integer</td>
+              <td>Cost of the action in cents. 0 for free actions.</td>
+            </tr>
+            <tr>
+              <td>timestamp</td>
+              <td>Float</td>
+              <td>Unix timestamp with fractional seconds (e.g., 1710252645.123456).</td>
+            </tr>
+            <tr>
+              <td>prev_hash</td>
+              <td>String</td>
+              <td>The row_hash of the immediately preceding row. Empty string "" for the first row.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-3-3-chain-integrity-property">
+        <name>3.3 Chain Integrity Property</name>
+        <t>For a chain of N rows, modifying any field of row K invalidates <tt>row_hash[K]</tt>, which invalidates <tt>prev_hash[K+1]</tt>, which invalidates <tt>row_hash[K+1]</tt>, and so on through <tt>row_hash[N]</tt>. This means:</t>
+        <ul>
+          <li>
+            <t><strong>Insertion</strong> of a row is detectable (changes all subsequent <tt>row_id</tt> values and hashes).</t>
+          </li>
+          <li>
+            <t><strong>Deletion</strong> of a row is detectable (breaks the <tt>prev_hash</tt> link).</t>
+          </li>
+          <li>
+            <t><strong>Reordering</strong> of rows is detectable (changes <tt>prev_hash</tt> linkage).</t>
+          </li>
+          <li>
+            <t><strong>Modification</strong> of any field is detectable (changes the affected row's hash and all subsequent hashes).</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-3-4-chain-hash-computation">
+        <name>3.4 Chain Hash Computation</name>
+        <t>The chain hash is a single SHA-256 hash that fingerprints the entire session:</t>
+        <sourcecode>If rows is empty:
+    chain_hash = SHA-256(b"empty")
+Else:
+    combined = concatenate(row_hash[1], row_hash[2], ..., row_hash[N])
+    chain_hash = SHA-256(combined.encode("utf-8"))
+</sourcecode>
+        <t>The chain hash is represented as a lowercase hexadecimal string (64 characters).</t>
+      </section>
+    </section>
+    <section anchor="s-4-audit-row-schema">
+      <name>4. Audit Row Schema</name>
+      <t>Each row in the audit log is a JSON object with the following fields:</t>
+      <sourcecode type="json">{
+  "id":           1,
+  "session_id":   "sess-abc123",
+  "action_type":  "tool_call",
+  "tool_name":    "browser.navigate",
+  "inputs_json":  "{\"url\": \"https://example.com\"}",
+  "outputs_json": "{\"title\": \"Example Domain\", \"url\": \"https://example.com/\"}",
+  "cost_cents":   0,
+  "error":        "",
+  "timestamp":    1710252645.123456,
+  "prev_hash":    "",
+  "row_hash":     "a1b2c3d4e5f6..."
+}
+</sourcecode>
+      <section anchor="s-4-1-field-specifications">
+        <name>4.1 Field Specifications</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Type</th>
+              <th>Required</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>id</td>
+              <td>Integer</td>
+              <td>Yes</td>
+              <td>Row identifier, 1-indexed, monotonically increasing.</td>
+            </tr>
+            <tr>
+              <td>session_id</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>Session identifier.</td>
+            </tr>
+            <tr>
+              <td>action_type</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>Action classification.</td>
+            </tr>
+            <tr>
+              <td>tool_name</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>Namespaced tool identifier.</td>
+            </tr>
+            <tr>
+              <td>inputs_json</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>JSON-encoded action inputs. Sensitive keys MUST be redacted (see Section 4.2).</td>
+            </tr>
+            <tr>
+              <td>outputs_json</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>JSON-encoded action outputs. MAY be truncated.</td>
+            </tr>
+            <tr>
+              <td>cost_cents</td>
+              <td>Integer</td>
+              <td>Yes</td>
+              <td>Action cost in cents.</td>
+            </tr>
+            <tr>
+              <td>error</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>Error message if the action failed; empty string if successful.</td>
+            </tr>
+            <tr>
+              <td>timestamp</td>
+              <td>Float</td>
+              <td>Yes</td>
+              <td>Unix timestamp with fractional seconds.</td>
+            </tr>
+            <tr>
+              <td>prev_hash</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>Previous row's row_hash. Empty string for the first row.</td>
+            </tr>
+            <tr>
+              <td>row_hash</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>This row's computed SHA-256 hash (see Section 3.1).</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-4-2-sensitive-input-redaction">
+        <name>4.2 Sensitive Input Redaction</name>
+        <t>Before computing the row hash, implementations MUST redact values for input keys matching any of the following case-insensitive substrings:</t>
+        <sourcecode>password, token, api_key, secret, key, authorization,
+bearer, credential, passwd, passphrase
+</sourcecode>
+        <t>Redacted values MUST be replaced with the string <tt>"[REDACTED]"</tt>.</t>
+      </section>
+      <section anchor="s-4-3-output-truncation">
+        <name>4.3 Output Truncation</name>
+        <t>Implementations MAY truncate <tt>outputs_json</tt> to a maximum length. The reference implementation truncates to 2000 characters. Truncation does not affect the hash chain because <tt>outputs_json</tt> is not included in the row hash computation.</t>
+        <blockquote>
+          <t><strong>Note:</strong> Only the seven fields listed in Section 3.1 are included in the hash computation. <tt>inputs_json</tt>, <tt>outputs_json</tt>, and <tt>error</tt> are included in the audit log for informational purposes but are NOT part of the hash chain. This is intentional: it allows output truncation and input redaction without breaking the chain.</t>
+        </blockquote>
+      </section>
+      <section anchor="s-4-4-javascript-source-storage-eval-actions">
+        <name>4.4 JavaScript Source Storage (eval actions)</name>
+        <t>When an agent executes JavaScript, implementations SHOULD store the full JavaScript source verbatim in <tt>inputs_json</tt> under the key <tt>"js_code"</tt>, along with a <tt>"code_hash"</tt> field containing the SHA-256 of the source. This provides cryptographic proof of exactly what code ran — not merely that JavaScript was executed. The <tt>js_code</tt> field is informational and is NOT included in the row hash computation.</t>
+        <sourcecode type="json">{
+  "tool_name":   "browser.eval",
+  "inputs_json": "{\"js_code\": \"document.querySelectorAll('h1').length\", \"code_hash\": \"a1b2c3d4...\"}"
+}
+</sourcecode>
+      </section>
+    </section>
+    <section anchor="s-5-ed25519-signature">
+      <name>5. Ed25519 Signature</name>
+      <section anchor="s-5-1-signing">
+        <name>5.1 Signing</name>
+        <t>The chain hash (Section 3.4) is signed using an Ed25519 private key:</t>
+        <sourcecode>signature_bytes = Ed25519_Sign(private_key, chain_hash.encode("utf-8"))
+signature_b64   = Base64_Encode(signature_bytes)
+</sourcecode>
+        <t>The signature is 64 bytes (512 bits), encoded as a Base64 ASCII string.</t>
+      </section>
+      <section anchor="s-5-2-identity-key">
+        <name>5.2 Identity Key</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Property</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Algorithm</td>
+              <td>Ed25519 (RFC 8032)</td>
+            </tr>
+            <tr>
+              <td>Private key size</td>
+              <td>32 bytes</td>
+            </tr>
+            <tr>
+              <td>Public key size</td>
+              <td>32 bytes</td>
+            </tr>
+            <tr>
+              <td>Storage format</td>
+              <td>Raw bytes (not PEM)</td>
+            </tr>
+            <tr>
+              <td>Public key representation</td>
+              <td>64-character lowercase hexadecimal string</td>
+            </tr>
+            <tr>
+              <td>File permissions</td>
+              <td>0600 (owner read/write only)</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-5-3-signature-file-format">
+        <name>5.3 Signature File Format</name>
+        <t>The signature is stored in <tt>session_sig.txt</tt> as a plain text file:</t>
+        <sourcecode>chain_hash:{64-char-hex-chain-hash}
+signature:{base64-encoded-signature}
+</sourcecode>
+        <t>If signing is unavailable:</t>
+        <sourcecode>chain_hash:{64-char-hex-chain-hash}
+# Ed25519 signing not available
+</sourcecode>
+      </section>
+      <section anchor="s-5-4-public-key-file-format">
+        <name>5.4 Public Key File Format</name>
+        <t>The public key is stored in <tt>public_key.pem</tt> as a plain text file:</t>
+        <sourcecode># Ed25519 public key: {64-char-hex-public-key}
+</sourcecode>
+        <t>If no signing key is configured:</t>
+        <sourcecode># No signing key configured
+</sourcecode>
+      </section>
+      <section anchor="s-5-5-signature-is-optional">
+        <name>5.5 Signature is Optional</name>
+        <t>Implementations MAY produce bundles without Ed25519 signatures. The hash chain provides tamper-evidence independent of the signature. The signature adds identity binding (proof of who produced the bundle).</t>
+      </section>
+    </section>
+    <section anchor="s-6-aivs-full-bundle-format">
+      <name>6. AIVS Full Bundle Format</name>
+      <section anchor="s-6-1-archive-structure">
+        <name>6.1 Archive Structure</name>
+        <t>An AIVS Full Bundle is a gzip-compressed tar archive (<tt>.tar.gz</tt>) containing a single directory with five required files:</t>
+        <sourcecode>aivs_proof_{session_prefix}_{unix_timestamp}.tar.gz
+└── session_proof/
+    ├── audit_log.jsonl       # Hash-chained action log
+    ├── manifest.json         # Bundle metadata
+    ├── session_sig.txt       # Ed25519 signature
+    ├── public_key.pem        # Signer's public key
+    └── verify.py             # Self-contained verifier (stdlib only)
+</sourcecode>
+        <t>Optional files (included when applicable):</t>
+        <sourcecode>    ├── previous_bundle_hash.txt  # SHA-256 of predecessor bundle (scan chain)
+    └── merkle_tree.json          # Page-level Merkle tree (crawl proofs)
+</sourcecode>
+      </section>
+      <section anchor="s-6-2-filename-convention">
+        <name>6.2 Filename Convention</name>
+        <sourcecode>aivs_proof_{session_id[0:8]}_{int(unix_timestamp)}.tar.gz
+</sourcecode>
+        <ul>
+          <li>
+            <t><tt>session_id[0:8]</tt>: First 8 characters of the session ID.</t>
+          </li>
+          <li>
+            <t><tt>unix_timestamp</tt>: Integer Unix timestamp at export time.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-6-3-audit-log-jsonl">
+        <name>6.3 audit_log.jsonl</name>
+        <t>Newline-delimited JSON (JSONL). Each line is one audit row (Section 4) serialized as a JSON object. Rows MUST be ordered by <tt>id</tt> ascending (chronological order).</t>
+      </section>
+      <section anchor="s-6-4-manifest-json">
+        <name>6.4 manifest.json</name>
+        <t>A JSON object with the following fields:</t>
+        <sourcecode type="json">{
+  "session_id":       "sess-abc123",
+  "exported_at":      "2026-03-14T15:30:45Z",
+  "action_count":     42,
+  "chain_hash":       "a1b2c3d4...",
+  "aivs_version":     "1.0",
+  "generator":        "Conduit",
+  "generator_url":    "https://github.com/bkauto3/Conduit"
+}
+</sourcecode>
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Type</th>
+              <th>Required</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>session_id</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>The session identifier.</td>
+            </tr>
+            <tr>
+              <td>exported_at</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>ISO 8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ).</td>
+            </tr>
+            <tr>
+              <td>action_count</td>
+              <td>Integer</td>
+              <td>Yes</td>
+              <td>Number of rows in audit_log.jsonl.</td>
+            </tr>
+            <tr>
+              <td>chain_hash</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>64-character hex chain hash (Section 3.4).</td>
+            </tr>
+            <tr>
+              <td>aivs_version</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>AIVS specification version (e.g. "1.0").</td>
+            </tr>
+            <tr>
+              <td>generator</td>
+              <td>String</td>
+              <td>No</td>
+              <td>Name of the producing software.</td>
+            </tr>
+            <tr>
+              <td>generator_url</td>
+              <td>String</td>
+              <td>No</td>
+              <td>URL of the producing software.</td>
+            </tr>
+          </tbody>
+        </table>
+        <t>Implementations MAY include additional metadata fields in the manifest. Verifiers MUST ignore unrecognized fields.</t>
+      </section>
+      <section anchor="s-6-5-session-sig-txt">
+        <name>6.5 session_sig.txt</name>
+        <t>See Section 5.3.</t>
+      </section>
+      <section anchor="s-6-6-public-key-pem">
+        <name>6.6 public_key.pem</name>
+        <t>See Section 5.4.</t>
+      </section>
+      <section anchor="s-6-7-verify-py">
+        <name>6.7 verify.py</name>
+        <t>A self-contained Python 3 verification script. Requirements:</t>
+        <ul>
+          <li>
+            <t>MUST verify the hash chain using only Python 3 standard library (<tt>hashlib</tt>, <tt>json</tt>, <tt>sys</tt>, <tt>pathlib</tt>).</t>
+          </li>
+          <li>
+            <t>MAY verify the Ed25519 signature if the <tt>cryptography</tt> library is available.</t>
+          </li>
+          <li>
+            <t>MUST exit with code <tt>0</tt> on successful verification.</t>
+          </li>
+          <li>
+            <t>MUST exit with code <tt>1</tt> if the hash chain is broken or the signature is invalid.</t>
+          </li>
+          <li>
+            <t>MUST print human-readable verification results to stdout.</t>
+          </li>
+        </ul>
+        <t><strong>Deployment note:</strong> The embedded <tt>verify.py</tt> is intended for ad-hoc verification by recipients without specialized tooling. Enterprise environments where executing bundled scripts is prohibited by policy SHOULD use the separately distributed reference implementation at <tt>https://github.com/swarmsync-ai/aivs-spec/tree/main/verifier/</tt> instead. The reference verifier is functionally identical but distributed through standard package management channels and subject to organizational security review processes. The proof bundle remains verifiable by either path.</t>
+        <t>The embedded verifier is the core differentiator of AIVS: any recipient can verify the bundle by running <tt>python verify.py</tt> with no installation, no network access, and no trust in external services.</t>
+      </section>
+      <section anchor="s-6-8-bundle-chaining-optional">
+        <name>6.8 Bundle Chaining (optional)</name>
+        <t>When a session produces multiple sequential bundles (e.g., repeated scans of the same target), each bundle MAY reference its predecessor:</t>
+        <ul>
+          <li>
+            <t><tt>previous_bundle_hash.txt</tt>: Contains the SHA-256 hex digest of the prior <tt>.tar.gz</tt> file.</t>
+          </li>
+          <li>
+            <t>The <tt>manifest.json</tt> SHOULD include a <tt>"previous_bundle_hash"</tt> field with the same value.</t>
+          </li>
+        </ul>
+        <t>This forms a scan chain: a tamper-evident sequence of bundles where each bundle cryptographically references its predecessor.</t>
+      </section>
+      <section anchor="s-6-9-merkle-tree-optional">
+        <name>6.9 Merkle Tree (optional)</name>
+        <t>For multi-page crawl sessions, implementations MAY include <tt>merkle_tree.json</tt> to enable selective page verification:</t>
+        <sourcecode type="json">{
+  "root":       "abc123...",
+  "leaf_count": 20,
+  "pages": [
+    {"url": "https://example.com/", "hash": "def456...", "leaf_index": 0},
+    {"url": "https://example.com/about", "hash": "ghi789...", "leaf_index": 1}
+  ],
+  "tree": [["def456...", "ghi789...", ...], ["parent1...", ...], ["root..."]]
+}
+</sourcecode>
+        <t>The Merkle tree is a binary tree over page content hashes. Internal nodes are computed as:</t>
+        <sourcecode>parent = SHA-256((left_hash + right_hash).encode("utf-8"))
+</sourcecode>
+        <t>Odd leaves are duplicated (paired with themselves). The root is included in <tt>manifest.json</tt> as <tt>"merkle_root"</tt>.</t>
+      </section>
+    </section>
+    <section anchor="s-7-aivs-micro">
+      <name>7. AIVS-Micro</name>
+      <t>AIVS-Micro is a minimal single-URL scan attestation. It is the smallest meaningful cryptographic proof — approximately 200 bytes — designed for use cases where a full session bundle is impractical: continuous monitoring, embedded score widgets, API responses, DNS TXT record verification, and cold outreach proof attachments.</t>
+      <section anchor="s-7-1-purpose-and-use-cases">
+        <name>7.1 Purpose and Use Cases</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Use Case</th>
+              <th>Why Micro</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Continuous page monitoring (15-min intervals)</td>
+              <td>Full bundles at high frequency are too large</td>
+            </tr>
+            <tr>
+              <td>Embedded score badge / live widget</td>
+              <td>API response must be lightweight</td>
+            </tr>
+            <tr>
+              <td>Cold outreach proof attachment</td>
+              <td>Recipient needs verifiable proof, not a full audit log</td>
+            </tr>
+            <tr>
+              <td>DNS TXT record verification</td>
+              <td>Record size limits require minimal format</td>
+            </tr>
+            <tr>
+              <td>API responses asserting scan freshness</td>
+              <td>~200 bytes fits inline in any JSON response</td>
+            </tr>
+          </tbody>
+        </table>
+        <t>A third party with the signer's Ed25519 public key can verify from an AIVS-Micro proof:</t>
+        <ul>
+          <li>
+            <t>The scan happened at the stated time</t>
+          </li>
+          <li>
+            <t>The page DOM was in the stated state at that time</t>
+          </li>
+          <li>
+            <t>The scan was performed by the declared scanner instance (via scanner version hash)</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-7-2-micro-proof-format">
+        <name>7.2 Micro Proof Format</name>
+        <t>An AIVS-Micro proof is a JSON object with exactly six fields:</t>
+        <sourcecode type="json">{
+  "url":                  "https://example.com",
+  "dom_hash":             "sha256:a1b2c3d4e5f6...",
+  "timestamp":            "2026-03-14T10:22:01.000000000Z",
+  "signature":            "ed25519:BASE64_ENCODED_SIGNATURE",
+  "scanner_version_hash": "sha256:def456...",
+  "scan_origin":          "local"
+}
+</sourcecode>
+      </section>
+      <section anchor="s-7-3-field-definitions">
+        <name>7.3 Field Definitions</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Type</th>
+              <th>Required</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>url</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>The URL that was scanned.</td>
+            </tr>
+            <tr>
+              <td>dom_hash</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>SHA-256 of the page DOM content, prefixed with "sha256:".</td>
+            </tr>
+            <tr>
+              <td>timestamp</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>ISO 8601 UTC timestamp with nanosecond precision (YYYY-MM-DDTHH:MM:SS.nnnnnnnnnZ).</td>
+            </tr>
+            <tr>
+              <td>signature</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>Ed25519 signature over the canonical payload (Section 7.4), prefixed with "ed25519:" and Base64-encoded. Value is "unsigned" if no identity key is available.</td>
+            </tr>
+            <tr>
+              <td>scanner_version_hash</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>SHA-256 of the scanner implementation file, prefixed with "sha256:". Binds the proof to a specific code version.</td>
+            </tr>
+            <tr>
+              <td>scan_origin</td>
+              <td>String</td>
+              <td>Yes</td>
+              <td>Where the scan originated. Implementations SHOULD use "local" for on-device scans.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-7-4-canonical-payload-for-signing">
+        <name>7.4 Canonical Payload for Signing</name>
+        <t>The Ed25519 signature is computed over the following pipe-delimited string, encoded as UTF-8:</t>
+        <sourcecode>{url}|{dom_hash}|{timestamp}|{scanner_version_hash}|{scan_origin}
+</sourcecode>
+        <t>All fields are used verbatim (including the <tt>"sha256:"</tt> prefix on <tt>dom_hash</tt> and <tt>scanner_version_hash</tt>).</t>
+      </section>
+      <section anchor="s-7-5-micro-proof-verification">
+        <name>7.5 Micro Proof Verification</name>
+        <sourcecode>Input: micro_proof JSON object, signer's Ed25519 public key (hex)
+
+1. Reconstruct canonical payload:
+   payload = "{url}|{dom_hash}|{timestamp}|{scanner_version_hash}|{scan_origin}"
+
+2. Decode signature:
+   sig_b64 = micro_proof["signature"].removeprefix("ed25519:")
+   sig_bytes = Base64_Decode(sig_b64)
+
+3. Verify:
+   Ed25519_Verify(public_key, sig_bytes, payload.encode("utf-8"))
+
+4. If verification succeeds: PASS
+5. If verification fails: FAIL
+6. If signature == "unsigned": SKIP (no identity binding)
+</sourcecode>
+      </section>
+      <section anchor="s-7-6-relationship-to-full-bundle">
+        <name>7.6 Relationship to Full Bundle</name>
+        <t>AIVS-Micro and AIVS Full Bundles are complementary, not alternatives:</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Property</th>
+              <th>AIVS Full Bundle</th>
+              <th>AIVS-Micro</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Contains</td>
+              <td>Complete action-by-action log</td>
+              <td>Single-URL scan attestation only</td>
+            </tr>
+            <tr>
+              <td>Size</td>
+              <td>Variable (scales with session length)</td>
+              <td>~200 bytes</td>
+            </tr>
+            <tr>
+              <td>Verifier</td>
+              <td>Embedded verify.py (stdlib only)</td>
+              <td>One Ed25519 verify call</td>
+            </tr>
+            <tr>
+              <td>Frequency</td>
+              <td>One per agent session</td>
+              <td>Can be generated every scan interval</td>
+            </tr>
+            <tr>
+              <td>Use case</td>
+              <td>Legal evidence, detailed audit, compliance filing</td>
+              <td>Monitoring, badges, API responses, cold outreach</td>
+            </tr>
+            <tr>
+              <td>Offline verification</td>
+              <td>Yes (embedded verifier)</td>
+              <td>Yes (single crypto operation)</td>
+            </tr>
+          </tbody>
+        </table>
+        <t>A single agent session MAY produce both: a full bundle for the complete audit trail, and one or more micro proofs for individual URLs visited during that session.</t>
+      </section>
+    </section>
+    <section anchor="s-8-verification-algorithm">
+      <name>8. Verification Algorithm</name>
+      <section anchor="s-8-1-hash-chain-verification-required-stdlib-on">
+        <name>8.1 Hash Chain Verification (REQUIRED, stdlib only)</name>
+        <sourcecode>Input: audit_log.jsonl
+Output: PASS or FAIL with row number
+
+prev_hash = ""
+for each row in audit_log.jsonl (ordered by id):
+    expected = SHA-256(
+        canonical_json({
+            "row_id":      row.id,
+            "session_id":  row.session_id,
+            "action_type": row.action_type,
+            "tool_name":   row.tool_name,
+            "cost_cents":  row.cost_cents,
+            "timestamp":   row.timestamp,
+            "prev_hash":   prev_hash
+        })
+    )
+    if row.row_hash != expected:
+        FAIL at row.id
+    prev_hash = row.row_hash
+
+PASS: all {N} rows verified
+</sourcecode>
+      </section>
+      <section anchor="s-8-2-ed25519-signature-verification-optional-re">
+        <name>8.2 Ed25519 Signature Verification (OPTIONAL, requires cryptography)</name>
+        <sourcecode>Input: session_sig.txt, public_key.pem
+Output: PASS, FAIL, or SKIP
+
+1. Parse chain_hash and signature from session_sig.txt
+2. Parse public key hex from public_key.pem
+3. If public key is all zeros ("0" * 64), SKIP
+4. Reconstruct Ed25519PublicKey from raw bytes
+5. Verify: Ed25519_Verify(public_key, signature, chain_hash.encode("utf-8"))
+6. If verification succeeds: PASS
+7. If verification fails: FAIL (exit 1)
+8. If cryptography library unavailable: SKIP with notice
+</sourcecode>
+      </section>
+      <section anchor="s-8-3-exit-codes">
+        <name>8.3 Exit Codes</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Meaning</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>0</td>
+              <td>Hash chain verified. Signature verified (if present and library available).</td>
+            </tr>
+            <tr>
+              <td>1</td>
+              <td>Hash chain broken OR signature invalid.</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+    <section anchor="s-9-security-considerations">
+      <name>9. Security Considerations</name>
+      <section anchor="s-9-1-what-aivs-proves">
+        <name>9.1 What AIVS Proves</name>
+        <ul>
+          <li>
+            <t><strong>Integrity:</strong> The sequence of actions has not been modified since the bundle was created.</t>
+          </li>
+          <li>
+            <t><strong>Completeness:</strong> No actions have been inserted or deleted from the chain.</t>
+          </li>
+          <li>
+            <t><strong>Ordering:</strong> Actions occurred in the recorded sequence.</t>
+          </li>
+          <li>
+            <t><strong>Identity</strong> (with signature): The bundle was produced by the holder of a specific Ed25519 private key.</t>
+          </li>
+          <li>
+            <t><strong>Code provenance</strong> (eval actions): The exact JavaScript source that executed is recorded verbatim.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-9-2-what-aivs-does-not-prove">
+        <name>9.2 What AIVS Does NOT Prove</name>
+        <ul>
+          <li>
+            <t><strong>Truthfulness:</strong> AIVS does not prove that the recorded inputs/outputs actually occurred. A malicious agent could fabricate actions and produce a valid chain.</t>
+          </li>
+          <li>
+            <t><strong>Origin integrity:</strong> AIVS detects after-the-fact tampering but does not prevent fabrication at the point of origin. An agent that controls its own logging infrastructure can construct a fraudulent but internally consistent hash chain from the start. AIVS proof bundles are therefore only as trustworthy as the logging infrastructure that produces them. For high-assurance use cases, the logging process SHOULD be isolated from the agent (e.g., a separate trusted process, hardware security module, or third-party logging service).</t>
+          </li>
+          <li>
+            <t><strong>Timeliness:</strong> Timestamps are self-reported. AIVS does not include external time attestation (e.g., RFC 3161). Implementations requiring trusted timestamps SHOULD layer RFC 3161 on top.</t>
+          </li>
+          <li>
+            <t><strong>Key authenticity:</strong> AIVS does not include a PKI or certificate chain. The public key in the bundle is self-asserted. Implementations requiring key authenticity SHOULD use a separate trust registry or Verifiable Credentials.</t>
+          </li>
+          <li>
+            <t><strong>Non-repudiation:</strong> Without a trusted timestamp and key binding to a real-world identity, AIVS provides limited non-repudiation. The signer could claim key compromise.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-9-3-threat-model">
+        <name>9.3 Threat Model</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Threat</th>
+              <th>Mitigated By</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Post-hoc modification of action log</td>
+              <td>Hash chain (Section 3)</td>
+            </tr>
+            <tr>
+              <td>Deletion of actions</td>
+              <td>Sequential prev_hash chaining</td>
+            </tr>
+            <tr>
+              <td>Insertion of actions</td>
+              <td>Sequential row_id + prev_hash chaining</td>
+            </tr>
+            <tr>
+              <td>Reordering of actions</td>
+              <td>prev_hash depends on previous row_hash</td>
+            </tr>
+            <tr>
+              <td>Impersonation of agent identity</td>
+              <td>Ed25519 signature (Section 5)</td>
+            </tr>
+            <tr>
+              <td>Exposure of sensitive inputs</td>
+              <td>Mandatory redaction (Section 4.2)</td>
+            </tr>
+            <tr>
+              <td>Replay of old proof bundle</td>
+              <td>session_id + timestamp provide uniqueness</td>
+            </tr>
+            <tr>
+              <td>Unknown JS code execution</td>
+              <td>Verbatim JS source storage (Section 4.4)</td>
+            </tr>
+            <tr>
+              <td>Micro proof tampering</td>
+              <td>Ed25519 over all six fields' canonical payload</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-9-4-recommended-extensions-for-high-assurance-">
+        <name>9.4 Recommended Extensions for High-Assurance Use</name>
+        <t>For use cases requiring stronger guarantees (legal evidence, financial compliance, regulatory submission):</t>
+        <ol>
+          <li>
+            <t><strong>RFC 3161 Timestamps:</strong> Submit the chain hash to an RFC 3161 Time Stamping Authority.</t>
+          </li>
+          <li>
+            <t><strong>SCITT Registration:</strong> Register the signed chain hash as a SCITT transparent statement.</t>
+          </li>
+          <li>
+            <t><strong>Verifiable Credentials:</strong> Wrap the proof bundle metadata as a W3C Verifiable Credential.</t>
+          </li>
+          <li>
+            <t><strong>Merkle Tree Aggregation:</strong> For multi-session audits, aggregate chain hashes into a Merkle tree.</t>
+          </li>
+        </ol>
+      </section>
+    </section>
+    <section anchor="s-10-iana-considerations">
+      <name>10. IANA Considerations</name>
+      <t>This specification defines no new IANA registries. The following existing standards are referenced:</t>
+      <ul>
+        <li>
+          <t>SHA-256: FIPS 180-4</t>
+        </li>
+        <li>
+          <t>Ed25519: RFC 8032</t>
+        </li>
+        <li>
+          <t>JSON: RFC 8259</t>
+        </li>
+        <li>
+          <t>JSONL: Newline-delimited JSON (de facto standard)</t>
+        </li>
+        <li>
+          <t>gzip: RFC 1952</t>
+        </li>
+        <li>
+          <t>tar: POSIX.1-2001</t>
+        </li>
+      </ul>
+    </section>
+    <section anchor="s-11-references">
+      <name>11. References</name>
+      <section anchor="normative">
+        <name>Normative</name>
+        <ul>
+          <li>
+            <t>[RFC 8032] Josefsson, S. and I. Liusvaara, "Edwards-Curve Digital Signature Algorithm (EdDSA)", RFC 8032, January 2017.</t>
+          </li>
+          <li>
+            <t>[FIPS 180-4] National Institute of Standards and Technology, "Secure Hash Standard (SHS)", FIPS PUB 180-4, August 2015.</t>
+          </li>
+          <li>
+            <t>[RFC 8259] Bray, T., "The JavaScript Object Notation (JSON) Data Interchange Format", RFC 8259, December 2017.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="informative">
+        <name>Informative</name>
+        <ul>
+          <li>
+            <t>[RFC 6962] Laurie, B., Langley, A., and E. Kasper, "Certificate Transparency", RFC 6962, June 2013.</t>
+          </li>
+          <li>
+            <t>[RFC 3161] Adams, C., et al., "Internet X.509 Public Key Infrastructure Time-Stamp Protocol (TSP)", RFC 3161, August 2001.</t>
+          </li>
+          <li>
+            <t>[EU AI Act] Regulation (EU) 2024/1689 of the European Parliament, Article 19.</t>
+          </li>
+          <li>
+            <t>[ISO 42001] ISO/IEC 42001:2023, Information technology -- Artificial intelligence -- Management system.</t>
+          </li>
+          <li>
+            <t>[SCITT] draft-ietf-scitt-architecture-22, Supply Chain Integrity, Transparency, and Trust (SCITT) Architecture.</t>
+          </li>
+          <li>
+            <t>[W3C VC] W3C Verifiable Credentials Data Model v2.0, W3C Recommendation, May 2025.</t>
+          </li>
+          <li>
+            <t>[VC-DI-EDDSA] W3C, "Data Integrity EdDSA Cryptosuites v1.0", W3C Recommendation, May 2025.</t>
+          </li>
+          <li>
+            <t>[C2PA] Coalition for Content Provenance and Authenticity, C2PA Technical Specification v2.2.</t>
+          </li>
+          <li>
+            <t>[VAP] draft-ailex-vap-legal-ai-provenance-03, Verifiable AI Provenance Framework and Legal AI Profile, March 2026.</t>
+          </li>
+          <li>
+            <t>[AAR] Agent Action Receipts v1.0, https://github.com/Cyberweasel777/agent-action-receipt-spec.</t>
+          </li>
+        </ul>
+      </section>
+    </section>
+    <section anchor="appendix-a-reference-implementation">
+      <name>Appendix A: Reference Implementation</name>
+      <t>The reference implementation is located in the Conduit repository:</t>
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>File</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Hash chain (audit log)</td>
+            <td>audit.py</td>
+          </tr>
+          <tr>
+            <td>Full bundle export</td>
+            <td>tools/conduit_proof.py — ConduitProof.export()</td>
+          </tr>
+          <tr>
+            <td>AIVS-Micro export</td>
+            <td>tools/conduit_proof.py — ConduitProof.export_micro()</td>
+          </tr>
+          <tr>
+            <td>Embedded verifier</td>
+            <td>VERIFY_PY constant in tools/conduit_proof.py</td>
+          </tr>
+          <tr>
+            <td>Ed25519 identity</td>
+            <td>tools/conduit_bridge.py — ConduitIdentity</td>
+          </tr>
+        </tbody>
+      </table>
+      <t>
+        <strong>Full bundle:</strong>
+      </t>
+      <sourcecode type="python">from tools.conduit_proof import ConduitProof
+
+proof = ConduitProof(audit_log, session_id, public_key_pem, identity)
+result = proof.export(output_dir="/path/to/output")
+# Returns: {"success": True, "path": "...", "action_count": N, "chain_hash": "..."}
+</sourcecode>
+      <t>
+        <strong>AIVS-Micro:</strong>
+      </t>
+      <sourcecode type="python">micro = proof.export_micro(
+    url="https://example.com",
+    dom_hash="a1b2c3d4...",
+    scan_origin="local",
+)
+# Returns: {"success": True, "micro_proof": {...}, "payload_signed": "..."}
+</sourcecode>
+    </section>
+    <section anchor="appendix-b-example-verify-py-output">
+      <name>Appendix B: Example verify.py Output</name>
+      <sourcecode>$ cd session_proof &amp;&amp; python verify.py
+
+Chain OK: 8 actions verified
+Signature OK: Ed25519 signature verified
+Session: sess-abc123
+Exported: 2026-03-14T15:30:45Z
+Actions: 8
+
+VERIFIED: This session proof is intact and unmodified.
+</sourcecode>
+    </section>
+    <section anchor="appendix-c-comparison-with-related-formats">
+      <name>Appendix C: Comparison with Related Formats</name>
+      <table>
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th>AIVS Full</th>
+            <th>AIVS-Micro</th>
+            <th>VAP/LAP</th>
+            <th>AAR</th>
+            <th>C2PA</th>
+            <th>SCITT</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Scope</td>
+            <td>Session (multi-action)</td>
+            <td>Single URL scan</td>
+            <td>AI model decision provenance</td>
+            <td>Single action</td>
+            <td>Media asset lifecycle</td>
+            <td>Supply chain statement</td>
+          </tr>
+          <tr>
+            <td>Self-verifiable</td>
+            <td>Yes (embedded verify.py)</td>
+            <td>Yes (one Ed25519 call)</td>
+            <td>No (HTTP API required)</td>
+            <td>No</td>
+            <td>No (requires SDK)</td>
+            <td>No (requires transparency service)</td>
+          </tr>
+          <tr>
+            <td>Offline verification</td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td>No</td>
+            <td>Yes</td>
+            <td>Partial</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Zero dependencies</td>
+            <td>Yes (stdlib Python)</td>
+            <td>Yes (one crypto call)</td>
+            <td>No</td>
+            <td>No (requires SDK)</td>
+            <td>No (requires SDK)</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Hash chain</td>
+            <td>SHA-256 linear chain</td>
+            <td>N/A (single proof)</td>
+            <td>SHA-256 per-event + Merkle</td>
+            <td>No (individual signatures)</td>
+            <td>Hash binding</td>
+            <td>Merkle tree</td>
+          </tr>
+          <tr>
+            <td>Signature</td>
+            <td>Ed25519 (optional)</td>
+            <td>Ed25519 (optional)</td>
+            <td>Ed25519 (required)</td>
+            <td>Ed25519 (required)</td>
+            <td>X.509 certificates</td>
+            <td>COSE signatures</td>
+          </tr>
+          <tr>
+            <td>Portable archive</td>
+            <td>.tar.gz</td>
+            <td>JSON object</td>
+            <td>.zip</td>
+            <td>JSON</td>
+            <td>JUMBF</td>
+            <td>COSE</td>
+          </tr>
+          <tr>
+            <td>Interactive agent sessions</td>
+            <td>Yes</td>
+            <td>Yes</td>
+            <td>No</td>
+            <td>Yes</td>
+            <td>No</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>JS source in chain</td>
+            <td>Yes (eval actions)</td>
+            <td>No</td>
+            <td>No</td>
+            <td>No</td>
+            <td>No</td>
+            <td>No</td>
+          </tr>
+          <tr>
+            <td>Domain</td>
+            <td>Any agent action</td>
+            <td>Any URL scan</td>
+            <td>Legal/regulated AI</td>
+            <td>Any agent action</td>
+            <td>Media content</td>
+            <td>Supply chain artifacts</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+    <section anchor="changelog">
+      <name>Changelog</name>
+      <section anchor="v1-1-refreshed-2026-09-04">
+        <name>v1.1 (refreshed 2026-09-04)</name>
+        <ul>
+          <li>
+            <t>Added current W3C Data Integrity EdDSA relationship; protocol wire format unchanged.</t>
+          </li>
+          <li>
+            <t>Retained canonical JSON hash computation introduced in April 2026.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="v1-1-2026-04-16">
+        <name>v1.1 (2026-04-16)</name>
+        <ul>
+          <li>
+            <t>Section 3.1: Replaced colon-separated field concatenation with canonical JSON serialization for hash computation to eliminate field-value collision vulnerability.</t>
+          </li>
+          <li>
+            <t>Section 6.7: Added deployment note for enterprise environments where executing bundled scripts is policy-prohibited.</t>
+          </li>
+          <li>
+            <t>Section 9.2: Added explicit Origin Integrity limitation documenting fabrication-at-origin concern.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="v1-0-2026-03-14">
+        <name>v1.0 (2026-03-14)</name>
+        <ul>
+          <li>
+            <t>Renamed from CSPF (Conduit Session Proof Format) to AIVS (Agentic Integrity Verification Standard).</t>
+          </li>
+          <li>
+            <t>Added Section 7: AIVS-Micro — minimal 6-field scan attestation for continuous monitoring.</t>
+          </li>
+          <li>
+            <t>Added Section 4.4: JavaScript source storage semantics for eval actions.</t>
+          </li>
+          <li>
+            <t>Added Section 6.8: Bundle chaining (scan chain) specification.</t>
+          </li>
+          <li>
+            <t>Added Section 6.9: Merkle tree specification for crawl proofs.</t>
+          </li>
+          <li>
+            <t>Added VAP/LAP to Section 1.3 relationship table and Appendix C comparison.</t>
+          </li>
+          <li>
+            <t>Updated <tt>aivs_version</tt> field in manifest.json schema.</t>
+          </li>
+          <li>
+            <t>Updated filename convention from <tt>conduit_proof_*</tt> to <tt>aivs_proof_*</tt>.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="v0-1-2026-03-12">
+        <name>v0.1 (2026-03-12)</name>
+        <ul>
+          <li>
+            <t>Initial specification as CSPF v1.0.</t>
+          </li>
+        </ul>
+      </section>
+    </section>
+  </middle>
+</rfc>

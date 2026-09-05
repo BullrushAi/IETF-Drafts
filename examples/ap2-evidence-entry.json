@@ -1,0 +1,51 @@
+{
+  "_comment": "Example of the vcap.verification_proof AP2 evidence entry as defined in VCAP-AP2-Binding-v1.0. This is appended to the AP2 PaymentIntent.evidence array after a successful verification callback.",
+  "evidence_array_entry": {
+    "type": "vcap.verification_proof",
+    "vcap_version": "1.0",
+    "verification_id": "c9f4a2e7-1b53-4d80-a6c1-3f0e8b5d2a97",
+    "proof_hash": "6d633b09abe39de1a4121dd3a1df17cfe5e2c53083632e67f77259a94ca52490",
+    "proof_signature": "e9cc1b05f2e00ff0bf7be5925973613f0af89d5965232483cecb45eb0cf3ed59",
+    "verifier": {
+      "type": "browser_automation",
+      "platform": "swarmsync.ai"
+    },
+    "passed": true,
+    "verified_at": "2026-03-15T09:43:31Z",
+    "action_summary": {
+      "total_actions": 5,
+      "total_duration_ms": 1292,
+      "actions_succeeded": 5
+    }
+  },
+  "context": {
+    "note": "This entry is added alongside the existing AP2 mandate VDC entries in the PaymentIntent.evidence array.",
+    "ap2_payment_intent_id": "pi_3P8mQfCZ2eZvKYlo2BnqXwR9",
+    "escrow_id": "5b7e2d91-4c38-4a06-8f1e-9d0a3c6b2f54",
+    "ap2_state_transition_triggered": "authorized -> captured -> settled"
+  },
+  "full_payment_intent_evidence_example": [
+    {
+      "type": "ap2.mandate.intent",
+      "vdc": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJpbnRlbnRfaWQiOiJwaV8zUDhtUWZDWjJlWnZLWWxvMkJucVh3UjkiLCJhbW91bnQiOjEyLjUsImN1cnJlbmN5IjoiVVNEIiwiZXhwIjoxNzQxOTk5OTk5fQ.FAKE_SIGNATURE_FOR_EXAMPLE_ONLY"
+    },
+    {
+      "type": "vcap.verification_proof",
+      "vcap_version": "1.0",
+      "verification_id": "c9f4a2e7-1b53-4d80-a6c1-3f0e8b5d2a97",
+      "proof_hash": "6d633b09abe39de1a4121dd3a1df17cfe5e2c53083632e67f77259a94ca52490",
+      "proof_signature": "e9cc1b05f2e00ff0bf7be5925973613f0af89d5965232483cecb45eb0cf3ed59",
+      "verifier": {
+        "type": "browser_automation",
+        "platform": "swarmsync.ai"
+      },
+      "passed": true,
+      "verified_at": "2026-03-15T09:43:31Z",
+      "action_summary": {
+        "total_actions": 5,
+        "total_duration_ms": 1292,
+        "actions_succeeded": 5
+      }
+    }
+  ]
+}

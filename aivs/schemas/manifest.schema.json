@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aivs.dev/schemas/v1/manifest.schema.json",
+  "title": "AIVS Bundle Manifest",
+  "description": "The manifest.json file included in every AIVS Full Bundle. Records session metadata, the chain hash that fingerprints the entire audit log, and provenance information about the bundle generator. Verifiers MUST ignore unrecognized fields. See AIVS v1.0 Section 6.4.",
+  "type": "object",
+  "required": [
+    "session_id",
+    "exported_at",
+    "action_count",
+    "chain_hash",
+    "aivs_version"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The session identifier. Must match the 'session_id' field in every row of the associated audit_log.jsonl."
+    },
+    "exported_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "description": "ISO 8601 UTC timestamp at which the proof bundle was generated. Format: YYYY-MM-DDTHH:MM:SSZ (no fractional seconds, always UTC 'Z' suffix).",
+      "examples": ["2026-03-14T15:30:45Z"]
+    },
+    "action_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The number of rows in audit_log.jsonl. Verifiers SHOULD confirm this matches the actual row count."
+    },
+    "chain_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 fingerprint of the entire audit log, computed as SHA-256(concat(row_hash[1], row_hash[2], ..., row_hash[N])). 64 lowercase hexadecimal characters. See AIVS v1.0 Section 3.4. For an empty log: SHA-256(b'empty')."
+    },
+    "aivs_version": {
+      "type": "string",
+      "description": "The AIVS specification version used to produce this bundle.",
+      "examples": ["1.0"]
+    },
+    "generator": {
+      "type": "string",
+      "description": "Optional. Human-readable name of the software that produced this bundle.",
+      "examples": ["Conduit"]
+    },
+    "generator_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Optional. URL of the software that produced this bundle.",
+      "examples": ["https://github.com/bkauto3/Conduit"]
+    },
+    "previous_bundle_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Optional. SHA-256 hex digest of the predecessor bundle file (.tar.gz). Present only when this bundle is part of a scan chain. See AIVS v1.0 Section 6.8."
+    },
+    "merkle_root": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Optional. Merkle tree root hash over page content hashes, included for multi-page crawl sessions. See AIVS v1.0 Section 6.9."
+    }
+  },
+  "examples": [
+    {
+      "session_id": "sess-d4e7f9a2b1c8",
+      "exported_at": "2026-03-14T15:30:45Z",
+      "action_count": 5,
+      "chain_hash": "7a98cea38daa6b38541bac9c5be28a0b9b60021eb9e14b2226ad5b5537f9a568",
+      "aivs_version": "1.0",
+      "generator": "Conduit",
+      "generator_url": "https://github.com/bkauto3/Conduit"
+    }
+  ]
+}

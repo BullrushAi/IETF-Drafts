@@ -1,0 +1,182 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://atep.dev/schemas/v1/trust-tier-evaluation.schema.json",
+  "title": "ATEP Trust Tier Evaluation",
+  "description": "Schema covering both the trust tier evaluation request (inputs for determining an agent's tier) and the evaluation result (the computed outcome and promotion decision). Used by platforms implementing the ATEP computation algorithm defined in Section 5.",
+  "definitions": {
+    "TrustTierEvaluationRequest": {
+      "$id": "https://atep.dev/schemas/v1/trust-tier-evaluation.schema.json#/definitions/TrustTierEvaluationRequest",
+      "title": "Trust Tier Evaluation Request",
+      "description": "Input data required to evaluate an agent's trust tier. All fields are computed from the agent's append-only session and identity records.",
+      "type": "object",
+      "required": [
+        "agent_id",
+        "total_sessions",
+        "has_cryptographic_identity",
+        "has_manual_review_approval"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "description": "Platform-specific identifier for the agent being evaluated.",
+          "minLength": 1,
+          "examples": ["agt_01HXYZ123456789ABCDEF"]
+        },
+        "total_sessions": {
+          "type": "integer",
+          "description": "Total number of sessions started by the agent (all statuses). The primary numeric threshold for tier promotion.",
+          "minimum": 0,
+          "examples": [127]
+        },
+        "successful_sessions": {
+          "type": "integer",
+          "description": "Number of sessions that reached COMPLETED status. Used for badge evaluation but not tier promotion thresholds.",
+          "minimum": 0,
+          "examples": [119]
+        },
+        "failed_sessions": {
+          "type": "integer",
+          "description": "Number of sessions that reached FAILED status.",
+          "minimum": 0,
+          "examples": [8]
+        },
+        "success_rate": {
+          "type": "number",
+          "description": "Ratio of successful_sessions to total_sessions. Used for badge evaluation.",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "examples": [0.937]
+        },
+        "has_cryptographic_identity": {
+          "type": "boolean",
+          "description": "True if an Ed25519 key pair has been provisioned for this agent via the identity service. Required (in addition to session count) for promotion to VERIFIED.",
+          "examples": [true]
+        },
+        "has_manual_review_approval": {
+          "type": "boolean",
+          "description": "True if a platform administrator has approved this agent through the manual review process. Required (in addition to session count) for promotion to TRUSTED. This flag MUST be derived from an audited admin action record.",
+          "examples": [false]
+        },
+        "current_tier": {
+          "type": "string",
+          "description": "The agent's current trust tier before this evaluation. Provided so the evaluator can enforce the monotonic promotion rule (tier can only increase, never decrease automatically).",
+          "enum": ["UNVERIFIED", "BASIC", "VERIFIED", "TRUSTED"],
+          "examples": ["VERIFIED"]
+        }
+      }
+    },
+    "TrustTierEvaluationResult": {
+      "$id": "https://atep.dev/schemas/v1/trust-tier-evaluation.schema.json#/definitions/TrustTierEvaluationResult",
+      "title": "Trust Tier Evaluation Result",
+      "description": "The computed outcome of a trust tier evaluation. Includes the resulting tier, whether a promotion occurred, and how far the agent is from the next tier.",
+      "type": "object",
+      "required": [
+        "agent_id",
+        "evaluated_at",
+        "resulting_tier",
+        "promotion_occurred"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "description": "The agent that was evaluated.",
+          "minLength": 1,
+          "examples": ["agt_01HXYZ123456789ABCDEF"]
+        },
+        "evaluated_at": {
+          "type": "string",
+          "description": "ISO 8601 timestamp of when this evaluation was performed.",
+          "format": "date-time",
+          "examples": ["2026-03-14T12:00:00.000Z"]
+        },
+        "resulting_tier": {
+          "type": "string",
+          "description": "The trust tier assigned as the result of this evaluation. Monotonically non-decreasing from previous tier.",
+          "enum": ["UNVERIFIED", "BASIC", "VERIFIED", "TRUSTED"],
+          "examples": ["VERIFIED"]
+        },
+        "previous_tier": {
+          "type": "string",
+          "description": "The agent's tier before this evaluation. Present when a promotion occurred, to record the transition.",
+          "enum": ["UNVERIFIED", "BASIC", "VERIFIED", "TRUSTED"],
+          "examples": ["BASIC"]
+        },
+        "promotion_occurred": {
+          "type": "boolean",
+          "description": "True if this evaluation resulted in a tier promotion (resulting_tier > previous_tier).",
+          "examples": [false]
+        },
+        "promotion_blocked_reason": {
+          "type": "string",
+          "description": "If the agent meets the session count threshold for the next tier but is blocked by an additional requirement, this field explains why promotion did not occur.",
+          "enum": [
+            "AWAITING_CRYPTOGRAPHIC_IDENTITY",
+            "AWAITING_MANUAL_REVIEW"
+          ],
+          "examples": ["AWAITING_CRYPTOGRAPHIC_IDENTITY"]
+        },
+        "next_tier": {
+          "type": "string",
+          "description": "The next tier the agent can be promoted to. Absent when the agent is already TRUSTED.",
+          "enum": ["BASIC", "VERIFIED", "TRUSTED"],
+          "examples": ["TRUSTED"]
+        },
+        "sessions_until_next": {
+          "type": "integer",
+          "description": "Additional sessions required before the agent reaches the session count threshold for next_tier. Zero means the session threshold is met, but additional requirements (identity, manual review) may still block promotion.",
+          "minimum": 0,
+          "examples": [73]
+        },
+        "additional_requirements_for_next": {
+          "type": "array",
+          "description": "Non-session requirements that must be satisfied before promotion to next_tier can occur.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "CRYPTOGRAPHIC_IDENTITY_REQUIRED",
+              "MANUAL_PLATFORM_REVIEW_REQUIRED"
+            ]
+          },
+          "examples": [["MANUAL_PLATFORM_REVIEW_REQUIRED"]]
+        },
+        "capability_grants": {
+          "type": "object",
+          "description": "The set of action categories granted to the agent at the resulting trust tier, per the reference capability-gating table in Section 3.4 of the spec. Implementations MAY override these per their domain.",
+          "additionalProperties": false,
+          "properties": {
+            "read_only": {
+              "type": "boolean",
+              "description": "NAVIGATE, EXTRACT, SCREENSHOT — granted to all tiers.",
+              "examples": [true]
+            },
+            "interaction": {
+              "type": "boolean",
+              "description": "CLICK, TYPE, WAIT_FOR — requires BASIC or above.",
+              "examples": [true]
+            },
+            "authentication": {
+              "type": "boolean",
+              "description": "LOGIN_FORM — requires VERIFIED or above.",
+              "examples": [true]
+            },
+            "financial": {
+              "type": "boolean",
+              "description": "PAYMENT_FORM, PURCHASE — requires TRUSTED only.",
+              "examples": [false]
+            }
+          }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/definitions/TrustTierEvaluationRequest"
+    },
+    {
+      "$ref": "#/definitions/TrustTierEvaluationResult"
+    }
+  ]
+}

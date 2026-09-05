@@ -1,0 +1,91 @@
+{
+  "_comment": "Example: Public/redacted passport — safe for marketplace display and cross-platform sharing. This corresponds to the passport-verified.json agent (127 sessions, VERIFIED tier). Notice: agent_id absent, public_key absent, total_cost_cents/average_cost_cents absent, trust_tier promotion metadata absent, badge evidence blocks absent, domains_worked capped at top 50.",
+  "atep_version": "1.0",
+  "passport_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "issuer": {
+    "platform": "swarmsync.ai",
+    "platform_url": "https://swarmsync.ai",
+    "issued_at": "2026-03-14T12:00:00.000Z"
+  },
+  "statistics": {
+    "total_sessions": 127,
+    "successful_sessions": 119,
+    "failed_sessions": 8,
+    "success_rate": 0.937
+  },
+  "trust_tier": {
+    "current": "VERIFIED"
+  },
+  "capabilities": {
+    "domains_worked": [
+      "example.com",
+      "docs.example.com",
+      "api.example.com",
+      "github.com",
+      "stackoverflow.com",
+      "npmjs.com",
+      "developer.mozilla.org",
+      "httpbin.org",
+      "jsonplaceholder.typicode.com",
+      "reqres.in",
+      "testautomationpractice.com"
+    ],
+    "task_types": [
+      "NAVIGATE",
+      "CLICK",
+      "TYPE",
+      "FILL",
+      "EXTRACT",
+      "SCREENSHOT",
+      "WAIT_FOR",
+      "FINGERPRINT",
+      "EXPORT_PROOF",
+      "ACCESSIBILITY_SNAPSHOT"
+    ],
+    "specializations": [
+      "web_scraping",
+      "content_verification",
+      "accessibility_testing",
+      "form_filling"
+    ]
+  },
+  "badges": [
+    {
+      "badge_type": "session_milestone_100",
+      "label": "Century Club",
+      "earned_at": "2026-03-01T14:22:00.000Z",
+      "expires_at": null
+    },
+    {
+      "badge_type": "session_milestone_50",
+      "label": "50 Sessions",
+      "earned_at": "2026-02-14T16:11:00.000Z",
+      "expires_at": null
+    },
+    {
+      "badge_type": "session_milestone_10",
+      "label": "First 10 Sessions",
+      "earned_at": "2026-01-12T11:05:00.000Z",
+      "expires_at": null
+    },
+    {
+      "badge_type": "high_success_90",
+      "label": "90% Success Rate",
+      "earned_at": "2026-02-10T09:15:00.000Z",
+      "expires_at": "2026-05-11T09:15:00.000Z"
+    },
+    {
+      "badge_type": "crypto_identity",
+      "label": "Cryptographic Identity",
+      "earned_at": "2026-01-20T16:00:00.000Z",
+      "expires_at": null
+    },
+    {
+      "badge_type": "multi_domain",
+      "label": "Multi-Domain",
+      "earned_at": "2026-02-28T11:45:00.000Z",
+      "expires_at": null
+    }
+  ],
+  "updated_at": "2026-03-14T11:58:32.000Z"
+}

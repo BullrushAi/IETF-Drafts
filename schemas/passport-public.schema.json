@@ -1,0 +1,193 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://atep.dev/schemas/v1/passport-public.schema.json",
+  "title": "ATEP Public Passport",
+  "description": "The redacted, publicly shareable passport subset. Omits internal agent identifiers, cryptographic key material, and business-sensitive financial data (cost fields). Safe for display on marketplace listings and for cross-platform portability. Served from the unauthenticated GET /agents/{agentId}/passport/public endpoint.",
+  "type": "object",
+  "required": [
+    "atep_version",
+    "passport_id",
+    "issuer",
+    "statistics",
+    "trust_tier",
+    "capabilities",
+    "badges",
+    "updated_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "atep_version": {
+      "type": "string",
+      "description": "The ATEP specification version this passport conforms to.",
+      "enum": ["1.0"],
+      "examples": ["1.0"]
+    },
+    "passport_id": {
+      "type": "string",
+      "description": "Globally unique identifier for this passport document. Present in public view to allow correlation with the full passport when verified by an authorized caller.",
+      "format": "uuid",
+      "examples": ["3fa85f64-5717-4562-b3fc-2c963f66afa6"]
+    },
+    "issuer": {
+      "type": "object",
+      "description": "Reduced issuer block for public view. The signature field is intentionally omitted here as verifying parties should request the full passport for signature validation.",
+      "required": ["platform", "platform_url", "issued_at"],
+      "additionalProperties": false,
+      "properties": {
+        "platform": {
+          "type": "string",
+          "description": "Human-readable name of the issuing platform.",
+          "minLength": 1,
+          "examples": ["swarmsync.ai"]
+        },
+        "platform_url": {
+          "type": "string",
+          "description": "Canonical HTTPS URL of the issuing platform.",
+          "format": "uri",
+          "examples": ["https://swarmsync.ai"]
+        },
+        "issued_at": {
+          "type": "string",
+          "description": "ISO 8601 timestamp of when this passport was last issued or reissued. Verifiers SHOULD reject passports where issued_at is older than their configured staleness threshold (recommended: 24 hours).",
+          "format": "date-time",
+          "examples": ["2026-03-14T12:00:00.000Z"]
+        }
+      }
+    },
+    "statistics": {
+      "type": "object",
+      "description": "Core session statistics. Cost fields (total_cost_cents, average_cost_cents) are intentionally omitted from the public view as business-sensitive financial data.",
+      "required": [
+        "total_sessions",
+        "successful_sessions",
+        "failed_sessions",
+        "success_rate"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "total_sessions": {
+          "type": "integer",
+          "description": "Total number of sessions ever started by this agent.",
+          "minimum": 0,
+          "examples": [127]
+        },
+        "successful_sessions": {
+          "type": "integer",
+          "description": "Number of sessions that transitioned to the COMPLETED status.",
+          "minimum": 0,
+          "examples": [119]
+        },
+        "failed_sessions": {
+          "type": "integer",
+          "description": "Number of sessions that transitioned to the FAILED status.",
+          "minimum": 0,
+          "examples": [8]
+        },
+        "success_rate": {
+          "type": "number",
+          "description": "Ratio of successful_sessions to total_sessions, expressed as a float between 0.0 and 1.0.",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "examples": [0.937]
+        }
+      }
+    },
+    "trust_tier": {
+      "type": "object",
+      "description": "Reduced trust tier block for public view. Promotion history metadata (promoted_at, next_tier, sessions_until_next) is internal and omitted.",
+      "required": ["current"],
+      "additionalProperties": false,
+      "properties": {
+        "current": {
+          "type": "string",
+          "description": "The agent's current trust tier.",
+          "enum": ["UNVERIFIED", "BASIC", "VERIFIED", "TRUSTED"],
+          "examples": ["VERIFIED"]
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "description": "Capability information for public display. domains_worked is capped at 50 entries sorted by frequency to limit data exposure per the privacy policy.",
+      "required": ["domains_worked", "task_types"],
+      "additionalProperties": false,
+      "properties": {
+        "domains_worked": {
+          "type": "array",
+          "description": "Top 50 hostnames the agent has operated on, sorted by visit frequency (descending). Full list is available in the private passport.",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "description": "A hostname the agent has navigated to.",
+            "examples": ["example.com"]
+          },
+          "uniqueItems": true,
+          "examples": [["example.com", "github.com", "stackoverflow.com"]]
+        },
+        "task_types": {
+          "type": "array",
+          "description": "Unique action/event types the agent has performed.",
+          "items": {
+            "type": "string",
+            "description": "A Conduit action type or custom event type name.",
+            "examples": ["NAVIGATE", "CLICK"]
+          },
+          "uniqueItems": true,
+          "examples": [["NAVIGATE", "CLICK", "EXTRACT"]]
+        },
+        "specializations": {
+          "type": "array",
+          "description": "High-level capability categories.",
+          "items": {
+            "type": "string",
+            "examples": ["web_scraping"]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "badges": {
+      "type": "array",
+      "description": "Earned badges in reduced public format. Evidence blocks are omitted per the privacy policy. Only badge_type, label, earned_at, and expires_at are exposed.",
+      "items": {
+        "type": "object",
+        "description": "Reduced badge object for public display.",
+        "required": ["badge_type", "label", "earned_at"],
+        "additionalProperties": false,
+        "properties": {
+          "badge_type": {
+            "type": "string",
+            "description": "Machine-readable badge identifier. Standard ATEP badge types have no namespace prefix. Platform-specific badges use a 'platform:' prefix.",
+            "minLength": 1,
+            "examples": ["session_milestone_100", "high_success_90", "crypto_identity"]
+          },
+          "label": {
+            "type": "string",
+            "description": "Human-readable display name for the badge.",
+            "minLength": 1,
+            "examples": ["Century Club", "90% Success Rate", "Cryptographic Identity"]
+          },
+          "earned_at": {
+            "type": "string",
+            "description": "ISO 8601 timestamp of when this badge was earned.",
+            "format": "date-time",
+            "examples": ["2026-03-01T14:22:00.000Z"]
+          },
+          "expires_at": {
+            "type": ["string", "null"],
+            "description": "ISO 8601 timestamp of when this badge expires, or null for permanent badges. Rolling badges (success rate, domain specialist, conduit_verified) have 90-day expiry windows.",
+            "format": "date-time",
+            "examples": ["2026-05-11T09:15:00.000Z", null]
+          }
+        }
+      },
+      "examples": [[]]
+    },
+    "updated_at": {
+      "type": "string",
+      "description": "ISO 8601 timestamp of the most recent passport recomputation.",
+      "format": "date-time",
+      "examples": ["2026-03-14T11:58:32.000Z"]
+    }
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://vcap.dev/schemas/v1/escrow-settlement.schema.json",
+  "title": "VCAP Escrow Settlement",
+  "description": "The final state of an escrow after verification. Represents either a release (payment to provider) or a refund (payment back to requester).",
+  "type": "object",
+  "required": [
+    "vcap_version",
+    "message_type",
+    "escrow_id",
+    "negotiation_id",
+    "status",
+    "verification_id",
+    "proof_hash",
+    "proof_signature",
+    "evidence",
+    "settled_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "vcap_version": {
+      "type": "string",
+      "description": "VCAP specification version.",
+      "enum": ["1.0"]
+    },
+    "message_type": {
+      "type": "string",
+      "description": "Discriminator for the VCAP message type.",
+      "enum": ["escrow_settlement"]
+    },
+    "escrow_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The escrow_id being settled."
+    },
+    "negotiation_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The negotiation_id this settlement is for."
+    },
+    "status": {
+      "type": "string",
+      "description": "Settlement outcome. RELEASED means funds went to the provider; REFUNDED means funds returned to the requester.",
+      "enum": ["RELEASED", "REFUNDED"]
+    },
+    "verification_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The verification_id of the verification_callback that triggered this settlement."
+    },
+    "proof_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Copied from the verification_callback.proof_hash for audit trail binding."
+    },
+    "proof_signature": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Copied from the verification_callback.proof_signature for audit trail binding."
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Cryptographic evidence bundle stored with the settlement record for post-hoc auditability.",
+      "required": ["proof_hash", "proof_signature"],
+      "additionalProperties": false,
+      "properties": {
+        "conduit_verification_id": {
+          "type": "string",
+          "description": "OPTIONAL identifier from the Conduit browser automation session that performed the verification."
+        },
+        "proof_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "SHA-256 hex digest of the canonical proof bundle."
+        },
+        "proof_signature": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "HMAC-SHA256 hex digest of the proof body signed with the shared secret."
+        },
+        "extracted_content": {
+          "type": "string",
+          "description": "OPTIONAL truncated content extracted during verification."
+        },
+        "action_log": {
+          "type": "array",
+          "description": "OPTIONAL full action log from the verification_callback for archival purposes.",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "platform_fee": {
+      "type": "object",
+      "description": "OPTIONAL platform fee applied at settlement time.",
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Absolute fee amount in decimal currency units."
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$",
+          "description": "ISO 4217 currency code."
+        },
+        "rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fee rate as a decimal (e.g., 0.05 for 5%)."
+        }
+      }
+    },
+    "settled_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the escrow was settled."
+    }
+  }
+}

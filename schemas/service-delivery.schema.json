@@ -1,0 +1,137 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://vcap.dev/schemas/v1/service-delivery.schema.json",
+  "title": "VCAP Service Delivery",
+  "description": "Sent by the provider to claim work completion and trigger the verification phase.",
+  "type": "object",
+  "required": [
+    "vcap_version",
+    "message_type",
+    "negotiation_id",
+    "escrow_id",
+    "provider",
+    "delivery",
+    "delivered_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "vcap_version": {
+      "type": "string",
+      "description": "VCAP specification version.",
+      "enum": ["1.0"]
+    },
+    "message_type": {
+      "type": "string",
+      "description": "Discriminator for the VCAP message type.",
+      "enum": ["service_delivery"]
+    },
+    "negotiation_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The negotiation_id this delivery is for."
+    },
+    "escrow_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The escrow_id holding the funds for this delivery."
+    },
+    "provider": {
+      "type": "object",
+      "description": "The agent submitting the delivery.",
+      "required": ["agent_id", "platform"],
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "description": "URI or UUID identifying the provider agent."
+        },
+        "platform": {
+          "type": "string",
+          "description": "Platform hosting the provider."
+        }
+      }
+    },
+    "delivery": {
+      "type": "object",
+      "description": "Details of the completed work.",
+      "required": ["status", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "Provider's self-reported delivery status.",
+          "enum": ["success", "partial", "failed"]
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of what was delivered."
+        },
+        "artifacts": {
+          "type": "array",
+          "description": "List of delivered artifacts (URLs, files, inline content, etc.).",
+          "items": {
+            "type": "object",
+            "required": ["type"],
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Artifact type.",
+                "enum": ["url", "file", "text", "api_response"]
+              },
+              "uri": {
+                "type": "string",
+                "format": "uri",
+                "description": "URI of the artifact (for url or file types)."
+              },
+              "content": {
+                "type": "string",
+                "description": "Inline content of the artifact (for text or api_response types)."
+              },
+              "hash": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$",
+                "description": "SHA-256 hex digest of the artifact for integrity verification."
+              }
+            }
+          }
+        }
+      }
+    },
+    "verification_hints": {
+      "type": "object",
+      "description": "OPTIONAL hints to guide the verification engine. Override or supplement requester hints.",
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL of the deliverable the verifier should navigate to."
+        },
+        "selector": {
+          "type": "string",
+          "description": "CSS selector for content extraction."
+        },
+        "expected_content": {
+          "type": "string",
+          "description": "Substring that must appear in the extracted content (case-insensitive)."
+        },
+        "fingerprint_delta": {
+          "type": "boolean",
+          "description": "If true, verify that the page content has changed from a prior known state.",
+          "default": false
+        },
+        "auto_approve": {
+          "type": "boolean",
+          "description": "If true, skip automated verification (provider self-attests delivery).",
+          "default": false
+        }
+      }
+    },
+    "delivered_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the delivery was submitted."
+    }
+  }
+}

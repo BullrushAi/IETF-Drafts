@@ -1,0 +1,48 @@
+{
+  "vcap_version": "1.0",
+  "message_type": "verification_callback",
+  "verification_id": "b2e6a0d4-9c71-4f38-8e25-7a1b3d0c4f82",
+  "passed": false,
+  "proof_hash": "0884bee7e259a4f22f1a83fcb7cc118b75f4b4463fe9fb682939360f27f1cc22",
+  "proof_signature": "c8235901587821718421dfc2a51d8073dabe844c640aff35b7dfad80a606d977",
+  "failure_reason": "Expected content 'project_complete' was not found in the extracted text. The page at https://demo.example.com/results/task-b2e6a0d4 returned a 404 Not Found response, indicating the deliverable has not been published.",
+  "action_log": [
+    {
+      "index": 0,
+      "action": "NAVIGATE",
+      "url": "https://demo.example.com/results/task-b2e6a0d4",
+      "success": true,
+      "cost_cents": 1,
+      "duration_ms": 1204,
+      "timestamp": "2026-03-15T11:07:14Z"
+    },
+    {
+      "index": 1,
+      "action": "EXTRACT_MAIN",
+      "url": "https://demo.example.com/results/task-b2e6a0d4",
+      "success": true,
+      "cost_cents": 2,
+      "duration_ms": 234,
+      "timestamp": "2026-03-15T11:07:15Z",
+      "data_snippet": "404 - Page Not Found. The resource you requested does not exist."
+    },
+    {
+      "index": 2,
+      "action": "SCREENSHOT",
+      "url": "https://demo.example.com/results/task-b2e6a0d4",
+      "success": true,
+      "cost_cents": 5,
+      "duration_ms": 387,
+      "timestamp": "2026-03-15T11:07:15Z"
+    },
+    {
+      "index": 3,
+      "action": "EXPORT_PROOF",
+      "success": true,
+      "cost_cents": 0,
+      "duration_ms": 29,
+      "timestamp": "2026-03-15T11:07:16Z"
+    }
+  ],
+  "completed_at": "2026-03-15T11:07:16Z"
+}

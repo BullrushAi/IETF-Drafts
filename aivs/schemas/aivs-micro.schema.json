@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aivs.dev/schemas/v1/aivs-micro.schema.json",
+  "title": "AIVS-Micro Attestation",
+  "description": "The minimal 6-field AIVS-Micro attestation (~200 bytes). A single-URL scan proof designed for continuous monitoring, embedded widgets, API responses, DNS TXT records, and cold outreach attachments where a full session bundle is impractical. An Ed25519 signature over the canonical pipe-delimited payload provides tamper-evidence. See AIVS v1.0 Section 7.",
+  "type": "object",
+  "required": [
+    "url",
+    "dom_hash",
+    "timestamp",
+    "signature",
+    "scanner_version_hash",
+    "scan_origin"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "url": {
+      "type": "string",
+      "format": "uri",
+      "description": "The URL that was scanned. Used verbatim in the canonical signing payload.",
+      "examples": ["https://swarmsync.ai"]
+    },
+    "dom_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 hash of the page DOM content at scan time, prefixed with 'sha256:'. The hash is computed over the raw DOM bytes. Used verbatim (including prefix) in the canonical signing payload.",
+      "examples": ["sha256:26018ff3bc8414282c6b50ed086debc564b4a9a5fe914acb07b014e1a755d94b"]
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{9}Z$",
+      "description": "ISO 8601 UTC timestamp of the scan with nanosecond precision. Format: YYYY-MM-DDTHH:MM:SS.nnnnnnnnnZ. Used verbatim in the canonical signing payload.",
+      "examples": ["2026-03-14T10:22:01.000000000Z"]
+    },
+    "signature": {
+      "type": "string",
+      "description": "Ed25519 signature over the canonical payload '{url}|{dom_hash}|{timestamp}|{scanner_version_hash}|{scan_origin}', prefixed with 'ed25519:' followed by a Base64-encoded 64-byte signature. Value is the literal string 'unsigned' when no identity key is configured.",
+      "oneOf": [
+        {
+          "const": "unsigned",
+          "description": "No identity key configured. Hash-chain integrity is still present; identity binding is absent."
+        },
+        {
+          "type": "string",
+          "pattern": "^ed25519:[A-Za-z0-9+/]{86}==$",
+          "description": "Base64-encoded Ed25519 signature (64 bytes = 88 base64 chars without padding, but standard base64 of 64 bytes = 88 chars). Prefixed with 'ed25519:'."
+        }
+      ],
+      "examples": ["unsigned", "ed25519:BASE64_ENCODED_64_BYTE_SIGNATURE=="]
+    },
+    "scanner_version_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "SHA-256 hash of the scanner implementation file (e.g., conduit_proof.py), prefixed with 'sha256:'. Binds this attestation to a specific, auditable version of the scanning code. Used verbatim (including prefix) in the canonical signing payload.",
+      "examples": ["sha256:6f07214e12d2aa094a385dd5d092b36fc04b3fff71666331541a857072f57886"]
+    },
+    "scan_origin": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Where the scan originated. Implementations SHOULD use 'local' for on-device scans. Other values are implementation-defined. Used verbatim in the canonical signing payload.",
+      "examples": ["local", "cloud", "ci"]
+    }
+  },
+  "examples": [
+    {
+      "url": "https://swarmsync.ai",
+      "dom_hash": "sha256:26018ff3bc8414282c6b50ed086debc564b4a9a5fe914acb07b014e1a755d94b",
+      "timestamp": "2026-03-14T10:22:01.000000000Z",
+      "signature": "unsigned",
+      "scanner_version_hash": "sha256:6f07214e12d2aa094a385dd5d092b36fc04b3fff71666331541a857072f57886",
+      "scan_origin": "local"
+    }
+  ]
+}

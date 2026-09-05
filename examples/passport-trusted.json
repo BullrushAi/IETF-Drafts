@@ -1,0 +1,265 @@
+{
+  "_comment": "Example: Highly trusted agent with 512 sessions. TRUSTED tier — meets >=200 session threshold, has cryptographic identity, and passed manual platform review. Full badge set including the exclusive trusted_review and near-perfect success rate badges. Already at maximum tier; no next_tier or sessions_until_next fields.",
+  "atep_version": "1.0",
+  "passport_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "agent_id": "agt_01JKEF90GH12IJ34KL56MN78OP",
+  "issuer": {
+    "platform": "swarmsync.ai",
+    "platform_url": "https://swarmsync.ai",
+    "issued_at": "2026-03-15T06:00:00.000Z",
+    "signature": "b9e1d3c5a7f2b9e1d3c5a7f2b9e1d3c5a7f2b9e1d3c5a7f2b9e1d3c5a7f2b9e1"
+  },
+  "statistics": {
+    "total_sessions": 512,
+    "successful_sessions": 507,
+    "failed_sessions": 5,
+    "success_rate": 0.990,
+    "total_cost_cents": 23891,
+    "average_cost_cents": 47,
+    "first_session_at": "2025-09-03T08:15:00.000Z",
+    "last_session_at": "2026-03-15T05:44:22.000Z"
+  },
+  "trust_tier": {
+    "current": "TRUSTED",
+    "promoted_at": "2026-01-28T14:00:00.000Z"
+  },
+  "capabilities": {
+    "domains_worked": [
+      "example.com",
+      "docs.example.com",
+      "api.example.com",
+      "github.com",
+      "gitlab.com",
+      "stackoverflow.com",
+      "npmjs.com",
+      "developer.mozilla.org",
+      "httpbin.org",
+      "jsonplaceholder.typicode.com",
+      "reqres.in",
+      "testautomationpractice.com",
+      "w3schools.com",
+      "css-tricks.com",
+      "web.dev",
+      "caniuse.com",
+      "jsfiddle.net",
+      "codepen.io",
+      "codesandbox.io",
+      "replit.com",
+      "swarmsync.ai",
+      "stripe.com",
+      "openai.com",
+      "anthropic.com",
+      "supabase.com"
+    ],
+    "task_types": [
+      "NAVIGATE",
+      "CLICK",
+      "TYPE",
+      "FILL",
+      "SELECT_OPTION",
+      "EXTRACT",
+      "EXTRACT_MAIN",
+      "SCREENSHOT",
+      "WAIT_FOR",
+      "SCROLL",
+      "HOVER",
+      "KEY_PRESS",
+      "HANDLE_DIALOG",
+      "FINGERPRINT",
+      "EXPORT_PROOF",
+      "ACCESSIBILITY_SNAPSHOT",
+      "EVAL",
+      "MAP",
+      "CONSOLE_MESSAGES",
+      "NETWORK_REQUESTS",
+      "OUTPUT_TO_FILE"
+    ],
+    "specializations": [
+      "web_scraping",
+      "content_verification",
+      "accessibility_testing",
+      "form_filling",
+      "seo_audit",
+      "regression_testing",
+      "swarmsync:conduit_verification"
+    ]
+  },
+  "badges": [
+    {
+      "badge_type": "session_milestone_500",
+      "label": "500 Sessions",
+      "description": "Agent has reached 500 total sessions — an exceptional level of operational experience.",
+      "criteria": "total_sessions >= 500",
+      "earned_at": "2026-03-10T13:30:00.000Z",
+      "expires_at": null,
+      "evidence": {
+        "session_count": 500,
+        "success_rate": 0.990
+      }
+    },
+    {
+      "badge_type": "session_milestone_100",
+      "label": "Century Club",
+      "description": "Agent has completed 100 or more sessions with verified outcomes.",
+      "criteria": "total_sessions >= 100",
+      "earned_at": "2025-11-22T09:10:00.000Z",
+      "expires_at": null,
+      "evidence": {
+        "session_count": 100,
+        "success_rate": 0.970
+      }
+    },
+    {
+      "badge_type": "session_milestone_50",
+      "label": "50 Sessions",
+      "description": "Agent has reached 50 total sessions.",
+      "criteria": "total_sessions >= 50",
+      "earned_at": "2025-10-18T16:55:00.000Z",
+      "expires_at": null,
+      "evidence": {
+        "session_count": 50,
+        "success_rate": 0.960
+      }
+    },
+    {
+      "badge_type": "session_milestone_10",
+      "label": "First 10 Sessions",
+      "description": "Agent has completed its first 10 sessions.",
+      "criteria": "total_sessions >= 10",
+      "earned_at": "2025-09-14T11:20:00.000Z",
+      "expires_at": null,
+      "evidence": {
+        "session_count": 10,
+        "success_rate": 0.900
+      }
+    },
+    {
+      "badge_type": "high_success_99",
+      "label": "Near-Perfect",
+      "description": "Agent maintains a 99% or higher success rate over at least 100 sessions.",
+      "criteria": "success_rate >= 0.99 AND total_sessions >= 100",
+      "earned_at": "2026-02-20T07:33:00.000Z",
+      "expires_at": "2026-05-21T07:33:00.000Z",
+      "evidence": {
+        "session_count": 487,
+        "success_rate": 0.990
+      }
+    },
+    {
+      "badge_type": "high_success_95",
+      "label": "95% Success Rate",
+      "description": "Agent maintains a 95% or higher success rate over at least 50 sessions.",
+      "criteria": "success_rate >= 0.95 AND total_sessions >= 50",
+      "earned_at": "2025-12-08T14:00:00.000Z",
+      "expires_at": "2026-03-08T14:00:00.000Z",
+      "evidence": {
+        "session_count": 149,
+        "success_rate": 0.960
+      }
+    },
+    {
+      "badge_type": "high_success_90",
+      "label": "90% Success Rate",
+      "description": "Agent maintains a 90% or higher success rate over at least 20 sessions.",
+      "criteria": "success_rate >= 0.90 AND total_sessions >= 20",
+      "earned_at": "2025-10-05T10:00:00.000Z",
+      "expires_at": "2026-04-05T10:00:00.000Z",
+      "evidence": {
+        "session_count": 31,
+        "success_rate": 0.935
+      }
+    },
+    {
+      "badge_type": "domain_specialist",
+      "label": "Domain Specialist",
+      "description": "Agent has completed 50 or more sessions on a single domain, demonstrating deep specialization.",
+      "criteria": "max(session_count_per_domain) >= 50",
+      "earned_at": "2026-01-15T11:00:00.000Z",
+      "expires_at": "2026-04-15T11:00:00.000Z",
+      "evidence": {
+        "session_count": 203,
+        "domains": ["example.com"]
+      }
+    },
+    {
+      "badge_type": "multi_domain",
+      "label": "Multi-Domain",
+      "description": "Agent has operated successfully on 10 or more distinct domains.",
+      "criteria": "len(domains_worked) >= 10",
+      "earned_at": "2025-11-10T08:45:00.000Z",
+      "expires_at": null,
+      "evidence": {
+        "session_count": 87,
+        "domains": [
+          "example.com",
+          "docs.example.com",
+          "api.example.com",
+          "github.com",
+          "gitlab.com",
+          "stackoverflow.com",
+          "npmjs.com",
+          "developer.mozilla.org",
+          "httpbin.org",
+          "jsonplaceholder.typicode.com"
+        ]
+      }
+    },
+    {
+      "badge_type": "crypto_identity",
+      "label": "Cryptographic Identity",
+      "description": "Agent has been provisioned an Ed25519 key pair for message signing and identity verification.",
+      "criteria": "has_cryptographic_identity == true",
+      "earned_at": "2025-10-01T09:00:00.000Z",
+      "expires_at": null,
+      "evidence": {}
+    },
+    {
+      "badge_type": "conduit_verified",
+      "label": "Conduit Verified",
+      "description": "Agent has successfully completed Conduit browser verification protocol.",
+      "criteria": "conduit_verification_session_completed == true",
+      "earned_at": "2026-01-05T15:20:00.000Z",
+      "expires_at": "2026-04-05T15:20:00.000Z",
+      "evidence": {
+        "session_count": 201,
+        "success_rate": 0.985
+      }
+    },
+    {
+      "badge_type": "trusted_review",
+      "label": "Platform Trusted",
+      "description": "Agent has passed manual platform review and is granted the highest level of operational trust.",
+      "criteria": "manual_platform_review_approved == true AND total_sessions >= 200",
+      "earned_at": "2026-01-28T14:00:00.000Z",
+      "expires_at": "2027-01-28T14:00:00.000Z",
+      "evidence": {
+        "session_count": 231,
+        "success_rate": 0.991,
+        "custom": {
+          "reviewed_by": "platform_admin",
+          "review_ticket": "REVIEW-2026-0042"
+        }
+      }
+    }
+  ],
+  "historical_badges": [
+    {
+      "badge_type": "high_success_95",
+      "label": "95% Success Rate",
+      "description": "Previously earned high_success_95 badge (expired, renewed above).",
+      "criteria": "success_rate >= 0.95 AND total_sessions >= 50",
+      "earned_at": "2025-10-20T12:00:00.000Z",
+      "expires_at": "2026-01-18T12:00:00.000Z",
+      "evidence": {
+        "session_count": 52,
+        "success_rate": 0.962
+      }
+    }
+  ],
+  "identity": {
+    "has_cryptographic_identity": true,
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VdAyEAqR7vLpT3kW8nF2mDjX9sYbUoHcEzAiVgNwKlQpMtSrY=\n-----END PUBLIC KEY-----",
+    "key_provisioned_at": "2025-10-01T09:00:00.000Z"
+  },
+  "updated_at": "2026-03-15T06:00:00.000Z"
+}

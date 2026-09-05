@@ -1,0 +1,1471 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rfc version="3" ipr="trust200902" docName="draft-stone-vcap-02" category="info" submissionType="independent" xml:lang="en" tocInclude="true" sortRefs="true" symRefs="true">
+  <front>
+    <title abbrev="VCAP">VCAP: Verified Commerce for Agent Protocols</title>
+    <seriesInfo name="Internet-Draft" value="draft-stone-vcap-02"/>
+    <author fullname="Ben Stone" initials="B." surname="Stone">
+      <organization>SwarmSync.AI</organization>
+      <address>
+        <email>benstone@swarmsync.ai</email>
+        <uri>https://swarmsync.ai</uri>
+      </address>
+    </author>
+    <date year="2026" month="September" day="4"/>
+    <area>Applications</area>
+    <workgroup>Individual Submission</workgroup>
+    <keyword>AI agents</keyword>
+    <keyword>escrow</keyword>
+    <keyword>settlement</keyword>
+    <keyword>verified commerce</keyword>
+    <abstract>
+      <t>This document specifies the <strong>Verified Commerce for Agent Protocols (VCAP)</strong>, an open standard for settling financial transactions between autonomous AI agents using cryptographically verifiable proof of work delivery. VCAP defines the message formats, state machines, cryptographic bindings, and callback contracts required for any agent marketplace to hold funds in escrow, automatically verify deliverables via independent verification engines, and release or refund payments based on machine-verifiable evidence.</t>
+      <t>VCAP is designed as a <strong>settlement layer</strong> that complements agent-to-agent communication protocols (such as Google A2A or the Agent Protocol). Where those protocols define <em>how agents discover and talk to each other</em>, VCAP defines <em>how agents pay each other with proof that work was done</em>.</t>
+    </abstract>
+  </front>
+  <middle>
+    <section anchor="s-1-introduction">
+      <name>1. Introduction</name>
+      <section anchor="s-1-1-problem-statement">
+        <name>1.1 Problem Statement</name>
+        <t>As AI agents proliferate, they increasingly need to transact with one another: hire other agents, delegate subtasks, and pay for completed work. Today there is no standard for:</t>
+        <ol>
+          <li>
+            <t>How an agent requests work and holds payment in escrow</t>
+          </li>
+          <li>
+            <t>How a delivering agent proves the work was actually done</t>
+          </li>
+          <li>
+            <t>How a verification engine independently confirms delivery</t>
+          </li>
+          <li>
+            <t>How proof of verification cryptographically triggers fund release</t>
+          </li>
+          <li>
+            <t>How timeouts and disputes are escalated to human review</t>
+          </li>
+        </ol>
+        <t>Each marketplace invents its own ad-hoc system, creating fragmentation and vendor lock-in. VCAP provides a vendor-neutral protocol that any marketplace, payment processor, or agent framework can implement.</t>
+      </section>
+      <section anchor="s-1-2-design-goals">
+        <name>1.2 Design Goals</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Goal</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Vendor-neutral</td>
+              <td>Any marketplace or payment processor can implement VCAP</td>
+            </tr>
+            <tr>
+              <td>Verification-agnostic</td>
+              <td>Any verification engine (browser automation, LLM evaluation, human review) can produce VCAP-compliant proofs</td>
+            </tr>
+            <tr>
+              <td>Cryptographically auditable</td>
+              <td>Every settlement is tied to a proof hash and signature that can be independently verified</td>
+            </tr>
+            <tr>
+              <td>Graceful degradation</td>
+              <td>Automated verification falls back to human review on timeout or ambiguity</td>
+            </tr>
+            <tr>
+              <td>Composable</td>
+              <td>VCAP layers on top of existing agent communication protocols (A2A, Agent Protocol, custom)</td>
+            </tr>
+            <tr>
+              <td>Minimal</td>
+              <td>The spec defines only what is necessary; implementations may extend it</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-1-3-relationship-to-other-protocols">
+        <name>1.3 Relationship to Other Protocols</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Protocol</th>
+              <th>Layer</th>
+              <th>VCAP Relationship</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Google A2A</td>
+              <td>Agent Communication</td>
+              <td>VCAP can be carried alongside A2A messages; VCAP does not redefine A2A transport</td>
+            </tr>
+            <tr>
+              <td>Agent Protocol</td>
+              <td>Task Execution</td>
+              <td>VCAP wraps Agent Protocol tasks with escrow and verification</td>
+            </tr>
+            <tr>
+              <td>AIVS (Agentic Integrity Verification Standard)</td>
+              <td>Proof Format</td>
+              <td>AIVS proof bundles are one valid VCAP proof format</td>
+            </tr>
+            <tr>
+              <td>OAuth 2.0</td>
+              <td>Authorization</td>
+              <td>VCAP agents may use OAuth for identity; VCAP adds payment semantics</td>
+            </tr>
+          </tbody>
+        </table>
+        <t><strong>AP2/UCP alignment (2026):</strong> AP2 is treated as an authorization and mandate layer used within a commerce protocol such as UCP. VCAP does not assume AP2 defines escrow, capture, refund, or settlement state transitions. AP2 mandate objects are referenced by hash or opaque identifier when VCAP binds delivery evidence to an authorized transaction. | Stripe Connect / x402 v2 | Payment Rails | VCAP is rail-agnostic; payment and escrow are performed by an external rail or custody provider |</t>
+      </section>
+      <section anchor="s-1-4-terminology">
+        <name>1.4 Terminology</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Term</th>
+              <th>Definition</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Requester</td>
+              <td>The agent (or human) that initiates a service request and holds payment</td>
+            </tr>
+            <tr>
+              <td>Provider</td>
+              <td>The agent that performs the work and receives payment</td>
+            </tr>
+            <tr>
+              <td>Marketplace</td>
+              <td>The platform that facilitates discovery, escrow, and settlement</td>
+            </tr>
+            <tr>
+              <td>Verifier</td>
+              <td>An independent engine that confirms whether work was delivered (may be automated or human)</td>
+            </tr>
+            <tr>
+              <td>Escrow</td>
+              <td>A financial hold on the requester's funds, released only upon verified delivery</td>
+            </tr>
+            <tr>
+              <td>Proof Bundle</td>
+              <td>A cryptographically signed artifact attesting to the verification result</td>
+            </tr>
+            <tr>
+              <td>Service Agreement</td>
+              <td>The contract between requester and provider, specifying deliverables and payment</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+    <section anchor="s-2-protocol-overview">
+      <name>2. Protocol Overview</name>
+      <section anchor="s-2-1-flow-summary">
+        <name>2.1 Flow Summary</name>
+        <sourcecode>   Requester                  Marketplace                Provider              Verifier
+      │                          │                          │                     │
+      │──── 1. NEGOTIATE ───────&gt;│                          │                     │
+      │                          │──── 2. FORWARD ─────────&gt;│                     │
+      │                          │&lt;─── 3. RESPOND ──────────│                     │
+      │&lt;─── 4. TERMS ───────────│                          │                     │
+      │──── 5. ACCEPT ─────────&gt;│                          │                     │
+      │                          │── 6. ESCROW_HOLD ───────&gt;│ (funds reserved)    │
+      │                          │── 7. AGREEMENT_CREATED ─&gt;│                     │
+      │                          │                          │                     │
+      │                          │     [Provider works...]  │                     │
+      │                          │                          │                     │
+      │                          │&lt;─── 8. DELIVER ──────────│                     │
+      │                          │──────────── 9. VERIFY ──────────────────────&gt;│
+      │                          │                          │                     │
+      │                          │      [Verifier runs...]  │                     │
+      │                          │                          │                     │
+      │                          │&lt;──────── 10. CALLBACK ──────────────────────│
+      │                          │                          │                     │
+      │                          │── 11a. ESCROW_RELEASE ──&gt;│ (if VERIFIED)       │
+      │                          │── 11b. ESCROW_REFUND ───&gt;│ (if FAILED)         │
+      │&lt;── 12. SETTLEMENT_RECEIPT│                          │                     │
+</sourcecode>
+      </section>
+      <section anchor="s-2-2-protocol-phases">
+        <name>2.2 Protocol Phases</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Phase</th>
+              <th>Name</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Phase 1</td>
+              <td>Negotiation</td>
+              <td>Requester and provider agree on scope, price, and verification criteria</td>
+            </tr>
+            <tr>
+              <td>Phase 2</td>
+              <td>Escrow</td>
+              <td>Marketplace holds requester's funds in escrow</td>
+            </tr>
+            <tr>
+              <td>Phase 3</td>
+              <td>Execution</td>
+              <td>Provider performs the work</td>
+            </tr>
+            <tr>
+              <td>Phase 4</td>
+              <td>Delivery</td>
+              <td>Provider submits deliverables with verification hints</td>
+            </tr>
+            <tr>
+              <td>Phase 5</td>
+              <td>Verification</td>
+              <td>Independent verifier confirms delivery against the agreement</td>
+            </tr>
+            <tr>
+              <td>Phase 6</td>
+              <td>Settlement</td>
+              <td>Escrow releases (on verification) or refunds (on failure)</td>
+            </tr>
+            <tr>
+              <td>Phase 7</td>
+              <td>Escalation</td>
+              <td>Timeout or ambiguity routes to human review</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+    <section anchor="s-3-message-formats">
+      <name>3. Message Formats</name>
+      <t>All messages are JSON objects. Fields marked REQUIRED must be present; fields marked OPTIONAL may be omitted. Implementations MUST ignore unknown fields for forward compatibility.</t>
+      <section anchor="s-3-1-negotiation-request">
+        <name>3.1 Negotiation Request</name>
+        <t>Sent by the requester to initiate a service request.</t>
+        <sourcecode type="json">{
+  "vcap_version": "1.0",
+  "message_type": "negotiation_request",
+  "negotiation_id": "string (UUID, generated by marketplace)",
+  "requester": {
+    "agent_id": "string (URI or UUID)",
+    "platform": "string (e.g., 'swarmsync', 'custom')"
+  },
+  "provider": {
+    "agent_id": "string (URI or UUID)",
+    "platform": "string"
+  },
+  "request": {
+    "service_type": "string (free-form or from a taxonomy)",
+    "description": "string (human-readable description of work)",
+    "budget_amount": "number (decimal, in currency units)",
+    "budget_currency": "string (ISO 4217, e.g., 'USD')",
+    "requirements": "object (OPTIONAL, implementation-specific)",
+    "deadline_utc": "string (OPTIONAL, ISO 8601 datetime)"
+  },
+  "verification_hints": {
+    "type": "string (OPTIONAL, e.g., 'url', 'artifact', 'llm_eval', 'human')",
+    "url": "string (OPTIONAL, URL of deliverable to verify)",
+    "selector": "string (OPTIONAL, CSS selector or JSONPath for content extraction)",
+    "expected_content": "string (OPTIONAL, substring or pattern to match)",
+    "fingerprint_delta": "boolean (OPTIONAL, check if content changed)",
+    "custom": "object (OPTIONAL, verifier-specific parameters)"
+  },
+  "metadata": "object (OPTIONAL, implementation-specific)"
+}
+</sourcecode>
+      </section>
+      <section anchor="s-3-2-negotiation-response">
+        <name>3.2 Negotiation Response</name>
+        <t>Sent by the provider to accept, reject, or counter the request.</t>
+        <sourcecode type="json">{
+  "vcap_version": "1.0",
+  "message_type": "negotiation_response",
+  "negotiation_id": "string (matches request)",
+  "response_status": "ACCEPTED | REJECTED | COUNTERED",
+  "counter_terms": {
+    "amount": "number (OPTIONAL, counter-offer price)",
+    "currency": "string (OPTIONAL)",
+    "description": "string (OPTIONAL, modified scope)",
+    "deadline_utc": "string (OPTIONAL)",
+    "rejection_reason": "string (OPTIONAL, when REJECTED)"
+  },
+  "provider_verification_hints": {
+    "type": "string (OPTIONAL, provider may suggest verification method)",
+    "url": "string (OPTIONAL)",
+    "custom": "object (OPTIONAL)"
+  }
+}
+</sourcecode>
+      </section>
+      <section anchor="s-3-3-escrow-hold">
+        <name>3.3 Escrow Hold</name>
+        <t>Created by the marketplace when negotiation reaches ACCEPTED.</t>
+        <sourcecode type="json">{
+  "vcap_version": "1.0",
+  "message_type": "escrow_hold",
+  "escrow_id": "string (UUID)",
+  "negotiation_id": "string",
+  "source_wallet": "string (requester's wallet/account identifier)",
+  "destination_wallet": "string (provider's wallet/account identifier)",
+  "amount": "number (decimal)",
+  "currency": "string (ISO 4217)",
+  "status": "HELD",
+  "release_condition": "string (memo linking escrow to negotiation)",
+  "held_at": "string (ISO 8601)",
+  "metadata": "object (OPTIONAL)"
+}
+</sourcecode>
+      </section>
+      <section anchor="s-3-4-service-delivery">
+        <name>3.4 Service Delivery</name>
+        <t>Sent by the provider to claim work completion.</t>
+        <sourcecode type="json">{
+  "vcap_version": "1.0",
+  "message_type": "service_delivery",
+  "negotiation_id": "string",
+  "escrow_id": "string",
+  "provider": {
+    "agent_id": "string",
+    "platform": "string"
+  },
+  "delivery": {
+    "status": "string ('success' | 'partial' | 'failed')",
+    "description": "string (what was delivered)",
+    "artifacts": [
+      {
+        "type": "string (e.g., 'url', 'file', 'text', 'api_response')",
+        "uri": "string (OPTIONAL)",
+        "content": "string (OPTIONAL, inline content)",
+        "hash": "string (OPTIONAL, SHA-256 of artifact)"
+      }
+    ]
+  },
+  "verification_hints": {
+    "url": "string (OPTIONAL, URL to verify)",
+    "selector": "string (OPTIONAL, CSS selector for content extraction)",
+    "expected_content": "string (OPTIONAL, substring to find)",
+    "fingerprint_delta": "boolean (OPTIONAL, default false)",
+    "auto_approve": "boolean (OPTIONAL, skip automated verification)"
+  },
+  "delivered_at": "string (ISO 8601)"
+}
+</sourcecode>
+      </section>
+      <section anchor="s-3-5-verification-request">
+        <name>3.5 Verification Request</name>
+        <t>Sent by the marketplace to the verifier engine.</t>
+        <sourcecode type="json">{
+  "vcap_version": "1.0",
+  "message_type": "verification_request",
+  "verification_id": "string (UUID)",
+  "negotiation_id": "string",
+  "spec": {
+    "url": "string (URL to verify)",
+    "selector": "string | null (CSS selector for extraction)",
+    "expected_content": "string | null (substring match, case-insensitive)",
+    "fingerprint_delta": "boolean (check content change)",
+    "timeout_seconds": "number (max verification duration, default 1800)"
+  },
+  "context": {
+    "marketplace": "string (marketplace identifier)",
+    "purpose": "escrow_verification",
+    "escrow_ref": "string (escrow ID)",
+    "negotiation_id": "string",
+    "verification_id": "string"
+  },
+  "requested_at": "string (ISO 8601)"
+}
+</sourcecode>
+      </section>
+      <section anchor="s-3-6-verification-callback-core-message">
+        <name>3.6 Verification Callback (Core Message)</name>
+        <t>Sent by the verifier back to the marketplace. <strong>This is the most critical message in the protocol</strong> -- it triggers escrow settlement.</t>
+        <sourcecode type="json">{
+  "vcap_version": "1.0",
+  "message_type": "verification_callback",
+  "verification_id": "string (matches request)",
+  "passed": "boolean (true = verified, false = failed)",
+  "proof_hash": "string (SHA-256 hex digest of the canonical proof bundle)",
+  "proof_signature": "string (Ed25519 signature, Base64-encoded)",
+  "verifier_key_id": "string (stable key identifier or verification-method URI)",
+  "extracted_content": "string (OPTIONAL, truncated content from target)",
+  "failure_reason": "string (OPTIONAL, human-readable when passed=false)",
+  "action_log": [
+    {
+      "index": "number (0-based sequential order)",
+      "action": "string (e.g., 'NAVIGATE', 'EXTRACT', 'SCREENSHOT', 'FINGERPRINT')",
+      "url": "string (OPTIONAL)",
+      "selector": "string (OPTIONAL)",
+      "success": "boolean",
+      "cost_cents": "number (cost of this action)",
+      "duration_ms": "number (OPTIONAL)",
+      "timestamp": "string (ISO 8601)",
+      "data_snippet": "string (OPTIONAL, first N chars of extracted data)"
+    }
+  ],
+  "completed_at": "string (ISO 8601)"
+}
+</sourcecode>
+      </section>
+      <section anchor="s-3-7-escrow-settlement">
+        <name>3.7 Escrow Settlement</name>
+        <t>The final state of the escrow after verification.</t>
+        <sourcecode type="json">{
+  "vcap_version": "1.0",
+  "message_type": "escrow_settlement",
+  "escrow_id": "string",
+  "negotiation_id": "string",
+  "status": "RELEASED | REFUNDED",
+  "verification_id": "string (links to the verification that triggered settlement)",
+  "proof_hash": "string (copied from verification callback for audit trail)",
+  "proof_signature": "string (copied from verification callback)",
+  "evidence": {
+    "conduit_verification_id": "string (OPTIONAL)",
+    "proof_hash": "string",
+    "proof_signature": "string",
+    "extracted_content": "string (OPTIONAL)",
+    "action_log": "array (OPTIONAL, full action log)"
+  },
+  "platform_fee": {
+    "amount": "number (OPTIONAL)",
+    "currency": "string (OPTIONAL)",
+    "rate": "number (OPTIONAL, decimal, e.g. 0.05 for 5%)"
+  },
+  "settled_at": "string (ISO 8601)"
+}
+</sourcecode>
+      </section>
+    </section>
+    <section anchor="s-4-state-machines">
+      <name>4. State Machines</name>
+      <section anchor="s-4-1-negotiation-state-machine">
+        <name>4.1 Negotiation State Machine</name>
+        <sourcecode>                    ┌──────────────┐
+                    │   PENDING    │
+                    └──────┬───────┘
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+              ▼            ▼            ▼
+        ┌──────────┐ ┌──────────┐ ┌──────────┐
+        │ ACCEPTED │ │COUNTERED │ │ DECLINED │
+        └────┬─────┘ └────┬─────┘ └──────────┘
+             │            │                     (terminal)
+             │            │
+             │       ┌────┴────┐
+             │       │ PENDING │  (counter-offer restarts negotiation)
+             │       └─────────┘
+             │
+             ▼
+   [Escrow Hold Created]
+   [Service Agreement Created]
+</sourcecode>
+        <t>
+          <strong>Transitions:</strong>
+        </t>
+        <table>
+          <thead>
+            <tr>
+              <th>From</th>
+              <th>To</th>
+              <th>Trigger</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>PENDING</td>
+              <td>ACCEPTED</td>
+              <td>Provider accepts terms</td>
+            </tr>
+            <tr>
+              <td>PENDING</td>
+              <td>COUNTERED</td>
+              <td>Provider counter-offers</td>
+            </tr>
+            <tr>
+              <td>PENDING</td>
+              <td>DECLINED</td>
+              <td>Provider rejects</td>
+            </tr>
+            <tr>
+              <td>COUNTERED</td>
+              <td>ACCEPTED</td>
+              <td>Requester accepts counter</td>
+            </tr>
+            <tr>
+              <td>COUNTERED</td>
+              <td>DECLINED</td>
+              <td>Requester rejects counter</td>
+            </tr>
+            <tr>
+              <td>COUNTERED</td>
+              <td>COUNTERED</td>
+              <td>Requester counter-counters</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-4-2-escrow-state-machine">
+        <name>4.2 Escrow State Machine</name>
+        <sourcecode>              ┌──────────┐
+              │   HELD   │
+              └────┬─────┘
+                   │
+         ┌─────────┼─────────┐
+         │                    │
+         ▼                    ▼
+   ┌──────────┐         ┌──────────┐
+   │ RELEASED │         │ REFUNDED │
+   └──────────┘         └──────────┘
+   (terminal)           (terminal)
+</sourcecode>
+        <t>
+          <strong>Transitions:</strong>
+        </t>
+        <table>
+          <thead>
+            <tr>
+              <th>From</th>
+              <th>To</th>
+              <th>Trigger</th>
+              <th>Guard</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>HELD</td>
+              <td>RELEASED</td>
+              <td>Verification VERIFIED</td>
+              <td>Atomic CAS: status = 'HELD'</td>
+            </tr>
+            <tr>
+              <td>HELD</td>
+              <td>REFUNDED</td>
+              <td>Verification FAILED or REJECTED</td>
+              <td>Atomic CAS: status = 'HELD'</td>
+            </tr>
+            <tr>
+              <td>HELD</td>
+              <td>REFUNDED</td>
+              <td>Timeout + manual rejection</td>
+              <td>Atomic CAS: status = 'HELD'</td>
+            </tr>
+          </tbody>
+        </table>
+        <t><strong>Concurrency Guard:</strong> The HELD -&gt; RELEASED/REFUNDED transition MUST use an atomic compare-and-swap (CAS) operation to prevent double-release. Implementations SHOULD use database-level atomic updates:</t>
+        <sourcecode type="sql">UPDATE Escrow SET status = 'RELEASED', released_at = NOW()
+WHERE id = :escrow_id AND status = 'HELD'
+-- Returns 0 rows affected if already transitioned
+</sourcecode>
+      </section>
+      <section anchor="s-4-3-verification-state-machine">
+        <name>4.3 Verification State Machine</name>
+        <sourcecode>   ┌─────────┐
+   │ PENDING │
+   └────┬────┘
+        │
+        ▼
+   ┌─────────┐
+   │ RUNNING │
+   └────┬────┘
+        │
+   ┌────┼────────┬──────────┐
+   │    │        │          │
+   ▼    ▼        ▼          ▼
+┌────┐┌────┐ ┌───────┐ ┌───────┐
+│VERI││FAIL│ │TIMEOUT│ │ ERROR │
+│FIED││ ED │ └───┬───┘ └───────┘
+└──┬─┘└──┬─┘     │
+   │     │       ▼
+   │     │  [Manual Review]
+   │     │       │
+   │     │  ┌────┴────┐
+   │     │  │ PENDING │ (OutcomeVerification)
+   │     │  └─────────┘
+   ▼     ▼
+[ESCROW  [ESCROW
+RELEASE] REFUND]
+</sourcecode>
+        <t>
+          <strong>Transitions:</strong>
+        </t>
+        <table>
+          <thead>
+            <tr>
+              <th>From</th>
+              <th>To</th>
+              <th>Trigger</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>PENDING</td>
+              <td>RUNNING</td>
+              <td>Verifier acknowledges job</td>
+            </tr>
+            <tr>
+              <td>RUNNING</td>
+              <td>VERIFIED</td>
+              <td>Verification callback passed=true</td>
+            </tr>
+            <tr>
+              <td>RUNNING</td>
+              <td>FAILED</td>
+              <td>Verification callback passed=false</td>
+            </tr>
+            <tr>
+              <td>RUNNING</td>
+              <td>TIMEOUT</td>
+              <td>No callback within timeout_seconds</td>
+            </tr>
+            <tr>
+              <td>RUNNING</td>
+              <td>ERROR</td>
+              <td>Verifier reports internal error</td>
+            </tr>
+            <tr>
+              <td>PENDING</td>
+              <td>TIMEOUT</td>
+              <td>No acknowledgment within timeout_seconds</td>
+            </tr>
+            <tr>
+              <td>TIMEOUT</td>
+              <td>(manual)</td>
+              <td>Escalated to human review queue</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-4-4-service-agreement-state-machine">
+        <name>4.4 Service Agreement State Machine</name>
+        <sourcecode>   ┌────────┐
+   │ ACTIVE │
+   └───┬────┘
+       │
+  ┌────┼────────┐
+  │    │        │
+  ▼    ▼        ▼
+┌────┐┌────┐ ┌────┐
+│COMP││DISP│ │CANC│
+│LETE││UTED│ │ELED│
+│  D ││    │ │    │
+└────┘└────┘ └────┘
+</sourcecode>
+        <table>
+          <thead>
+            <tr>
+              <th>From</th>
+              <th>To</th>
+              <th>Trigger</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>ACTIVE</td>
+              <td>COMPLETED</td>
+              <td>Verification VERIFIED</td>
+            </tr>
+            <tr>
+              <td>ACTIVE</td>
+              <td>DISPUTED</td>
+              <td>Verification REJECTED</td>
+            </tr>
+            <tr>
+              <td>ACTIVE</td>
+              <td>CANCELLED</td>
+              <td>Either party cancels before delivery</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+    <section anchor="s-5-cryptographic-binding">
+      <name>5. Cryptographic Binding</name>
+      <section anchor="s-5-1-proof-hash">
+        <name>5.1 Proof Hash</name>
+        <t>The <tt>proof_hash</tt> field in the Verification Callback MUST be computed as:</t>
+        <sourcecode>proof_hash = SHA-256(canonical_json(proof_bundle))
+</sourcecode>
+        <t>Where <tt>canonical_json</tt> serializes the proof bundle with:</t>
+        <ul>
+          <li>
+            <t>Object keys sorted alphabetically (recursive)</t>
+          </li>
+          <li>
+            <t>No whitespace between tokens</t>
+          </li>
+          <li>
+            <t>UTF-8 encoding</t>
+          </li>
+          <li>
+            <t>No trailing newline</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-5-2-proof-signature">
+        <name>5.2 Proof Signature</name>
+        <t>The <tt>proof_signature</tt> field MUST be computed using Ed25519:</t>
+        <sourcecode>proof_body = canonical_json({
+    "verification_id": verification_id,
+    "negotiation_id":  negotiation_id,
+    "escrow_ref":      escrow_ref,
+    "passed":          passed,
+    "proof_hash":      proof_hash,
+    "verifier_key_id": verifier_key_id,
+    "completed_at":    completed_at
+})
+
+proof_signature = Ed25519_Sign(verifier_private_key, proof_body.encode("utf-8"))
+proof_signature_b64 = Base64_Encode(proof_signature)
+</sourcecode>
+        <t>The verifier's Ed25519 public key MUST be registered with the marketplace out-of-band before the first verification request is processed.</t>
+        <t><strong>Rationale for Ed25519 over HMAC-SHA256:</strong> HMAC requires a shared secret that must be transmitted out-of-band and rotated periodically, creating operational overhead. Ed25519 enables stateless verification: any party with the verifier's public key can independently verify the signature without coordinating with the marketplace. This is critical for cross-platform VCAP deployments.</t>
+        <t><strong>Migration note (v1.0 → v1.1):</strong> The original VCAP v1.0 used HMAC-SHA256 for <tt>proof_signature</tt>. This was identified as an inconsistency by the W3C AI Knowledge Representation Community Group (AIKR CG Technical Note AI-KR-CG-TR-2026-001). VCAP v1.1 aligns all signature operations on Ed25519. Implementations MUST check the <tt>vcap_version</tt> field to determine which signature algorithm to use during verification.</t>
+      </section>
+      <section anchor="s-5-3-action-log-hash-chain-optional-recommended">
+        <name>5.3 Action Log Hash Chain (OPTIONAL, RECOMMENDED)</name>
+        <t>For verifiers that record sequential actions (e.g., browser automation), the action log SHOULD be hash-chained:</t>
+        <sourcecode>hash_0 = SHA-256(canonical_json(action_0))
+hash_1 = SHA-256(canonical_json(action_1) || hash_0)
+hash_2 = SHA-256(canonical_json(action_2) || hash_1)
+...
+hash_n = SHA-256(canonical_json(action_n) || hash_(n-1))
+</sourcecode>
+        <t>The final <tt>hash_n</tt> SHOULD be included in the proof bundle. Modifying any past action immediately invalidates all subsequent hashes, providing tamper evidence.</t>
+      </section>
+      <section anchor="s-5-4-agent-identity-binding-optional">
+        <name>5.4 Agent Identity Binding (OPTIONAL)</name>
+        <t>When agent identity is cryptographically established (e.g., via Ed25519 key pairs), the proof bundle MAY include:</t>
+        <sourcecode type="json">{
+  "agent_identity": {
+    "agent_id": "string",
+    "public_key": "string (PEM, Ed25519 SPKI format)",
+    "signature": "string (Ed25519 signature of canonical_json({agent_id, timestamp}), Base64-encoded)",
+    "timestamp": "string (ISO 8601)"
+  }
+}
+</sourcecode>
+        <t>Agent identity headers for HTTP transport:</t>
+        <sourcecode>X-Agent-Id: &lt;agent UUID&gt;
+X-Agent-Signature: &lt;ISO-timestamp&gt;.&lt;Ed25519-signature-Base64&gt;
+X-Agent-Platform: &lt;platform identifier&gt;
+</sourcecode>
+      </section>
+    </section>
+    <section anchor="s-6-verification-engines">
+      <name>6. Verification Engines</name>
+      <t>VCAP does not mandate a specific verification technology. Any system that can produce a compliant <tt>verification_callback</tt> message is a valid VCAP verifier.</t>
+      <section anchor="s-6-1-verifier-requirements">
+        <name>6.1 Verifier Requirements</name>
+        <t>A compliant VCAP verifier MUST:</t>
+        <ol>
+          <li>
+            <t>Accept a <tt>verification_request</tt> message</t>
+          </li>
+          <li>
+            <t>Return a <tt>verification_callback</tt> message within the specified <tt>timeout_seconds</tt></t>
+          </li>
+          <li>
+            <t>Include a <tt>proof_hash</tt> computed per Section 5.1</t>
+          </li>
+          <li>
+            <t>Include a <tt>proof_signature</tt> computed per Section 5.2</t>
+          </li>
+          <li>
+            <t>Set <tt>passed</tt> to <tt>true</tt> only if the verification criteria are met</t>
+          </li>
+          <li>
+            <t>Include an <tt>action_log</tt> documenting all steps taken</t>
+          </li>
+        </ol>
+        <t>A compliant VCAP verifier SHOULD:</t>
+        <ol>
+          <li>
+            <t>Use hash-chained action logs per Section 5.3</t>
+          </li>
+          <li>
+            <t>Include <tt>extracted_content</tt> when applicable</t>
+          </li>
+          <li>
+            <t>Provide human-readable <tt>failure_reason</tt> when <tt>passed=false</tt></t>
+          </li>
+        </ol>
+      </section>
+      <section anchor="s-6-2-example-verifier-types">
+        <name>6.2 Example Verifier Types</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Description</th>
+              <th>Use Case</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Browser Automation</td>
+              <td>Navigates to URL, extracts content, fingerprints page</td>
+              <td>Web deliverables, deployed applications</td>
+            </tr>
+            <tr>
+              <td>LLM Evaluation</td>
+              <td>Sends deliverable to an LLM for quality assessment</td>
+              <td>Content generation, code review</td>
+            </tr>
+            <tr>
+              <td>API Health Check</td>
+              <td>Calls API endpoints and validates responses</td>
+              <td>API development tasks</td>
+            </tr>
+            <tr>
+              <td>Human Review</td>
+              <td>Routes to a human reviewer with a structured rubric</td>
+              <td>Subjective quality, complex deliverables</td>
+            </tr>
+            <tr>
+              <td>Composite</td>
+              <td>Chains multiple verifiers (e.g., browser + LLM)</td>
+              <td>Multi-criteria verification</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-6-3-verifier-accountability">
+        <name>6.3 Verifier Accountability</name>
+        <t>VCAP defines what a verifier must do (return a pass/fail result with evidence) but implementations MUST also address how verifier competence and bias are assessed, since the marketplace effectively controls settlement outcomes when it selects verifiers.</t>
+        <t><strong>Verifier registration requirements:</strong> Before accepting verification results from any verifier, a VCAP marketplace MUST:</t>
+        <ol>
+          <li>
+            <t>Verify the verifier's Ed25519 public key or verification method is registered and trusted</t>
+          </li>
+          <li>
+            <t>Record the verifier's stated capabilities (verification types supported, action types logged)</t>
+          </li>
+          <li>
+            <t>Define a dispute escalation path if the verifier's results are contested</t>
+          </li>
+        </ol>
+        <t><strong>Bias prevention:</strong> When the marketplace operator also controls the verifier, this creates a conflict of interest where the marketplace can influence settlement outcomes. Implementations SHOULD support third-party verifiers selected by mutual agreement between requester and provider.</t>
+        <t><strong>Verifier transparency:</strong> Marketplaces SHOULD publish their verifier selection policy, including:</t>
+        <ul>
+          <li>
+            <t>What verifier types are used for which service categories</t>
+          </li>
+          <li>
+            <t>How verifier conflicts of interest are managed</t>
+          </li>
+          <li>
+            <t>How contested verification results are escalated</t>
+          </li>
+        </ul>
+        <t><strong>Audit trail:</strong> All verifier registrations, key rotations, and deregistrations MUST be logged with timestamps and stored alongside escrow settlement records.</t>
+      </section>
+      <section anchor="s-6-4-verification-hints">
+        <name>6.4 Verification Hints</name>
+        <t>The <tt>verification_hints</tt> object in the delivery message tells the verifier what to check. Standard hint fields:</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Type</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>url</td>
+              <td>string</td>
+              <td>URL of the deliverable to verify</td>
+            </tr>
+            <tr>
+              <td>selector</td>
+              <td>string</td>
+              <td>CSS selector or JSONPath to extract specific content</td>
+            </tr>
+            <tr>
+              <td>expected_content</td>
+              <td>string</td>
+              <td>Substring that must appear (case-insensitive)</td>
+            </tr>
+            <tr>
+              <td>fingerprint_delta</td>
+              <td>boolean</td>
+              <td>If true, verify the page content has changed from a prior known state</td>
+            </tr>
+            <tr>
+              <td>auto_approve</td>
+              <td>boolean</td>
+              <td>If true, skip automated verification (provider self-attests)</td>
+            </tr>
+            <tr>
+              <td>custom</td>
+              <td>object</td>
+              <td>Verifier-specific parameters (e.g., LLM rubric, API schema)</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+    <section anchor="s-7-timeout-and-escalation">
+      <name>7. Timeout and Escalation</name>
+      <section anchor="s-7-1-timeout-semantics">
+        <name>7.1 Timeout Semantics</name>
+        <t>If a verification does not complete within <tt>timeout_seconds</tt> (default: 1800 seconds / 30 minutes):</t>
+        <ol>
+          <li>
+            <t>The marketplace MUST transition the verification to <tt>TIMEOUT</tt> status</t>
+          </li>
+          <li>
+            <t>The escrow MUST remain in <tt>HELD</tt> status (funds are NOT auto-released or auto-refunded)</t>
+          </li>
+          <li>
+            <t>The marketplace SHOULD create a manual review queue entry with status <tt>PENDING</tt></t>
+          </li>
+          <li>
+            <t>A human reviewer MUST make the final settlement decision</t>
+          </li>
+        </ol>
+      </section>
+      <section anchor="s-7-2-timeout-detection">
+        <name>7.2 Timeout Detection</name>
+        <t>Implementations SHOULD run a periodic check (recommended: every 5 minutes) that:</t>
+        <sourcecode>FOR EACH verification WHERE
+  status IN ('PENDING', 'RUNNING') AND
+  created_at &lt; (NOW() - timeout_seconds)
+DO
+  SET status = 'TIMEOUT'
+  SET failure_reason = 'Verification timed out — escalated to manual review'
+  CREATE manual_review_entry(status = 'PENDING')
+</sourcecode>
+      </section>
+      <section anchor="s-7-3-manual-review">
+        <name>7.3 Manual Review</name>
+        <t>When a verification is escalated to manual review, the reviewer has access to:</t>
+        <ul>
+          <li>
+            <t>The original service agreement and negotiation terms</t>
+          </li>
+          <li>
+            <t>The provider's delivery artifacts</t>
+          </li>
+          <li>
+            <t>Any partial verification results (action logs, extracted content)</t>
+          </li>
+          <li>
+            <t>The escrow hold details</t>
+          </li>
+        </ul>
+        <t>The reviewer MUST produce a standard <tt>verification_callback</tt> message with:</t>
+        <ul>
+          <li>
+            <t><tt>passed = true</tt> or <tt>passed = false</tt></t>
+          </li>
+          <li>
+            <t><tt>action_log</tt> containing a single entry documenting the manual decision</t>
+          </li>
+          <li>
+            <t><tt>proof_hash</tt> and <tt>proof_signature</tt> computed normally</t>
+          </li>
+        </ul>
+      </section>
+    </section>
+    <section anchor="s-8-idempotency">
+      <name>8. Idempotency</name>
+      <section anchor="s-8-1-delivery-idempotency">
+        <name>8.1 Delivery Idempotency</name>
+        <t>If the same provider submits delivery for the same escrow multiple times, the marketplace MUST return the existing verification result rather than creating a new one. This prevents:</t>
+        <ul>
+          <li>
+            <t>Double-release of escrow funds</t>
+          </li>
+          <li>
+            <t>Duplicate verification jobs</t>
+          </li>
+          <li>
+            <t>Replay attacks</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-8-2-escrow-idempotency">
+        <name>8.2 Escrow Idempotency</name>
+        <t>The HELD -&gt; RELEASED/REFUNDED transition MUST be atomic and idempotent. If two concurrent processes attempt to settle the same escrow, exactly one MUST succeed and the other MUST observe the already-settled state.</t>
+      </section>
+      <section anchor="s-8-3-verification-callback-idempotency">
+        <name>8.3 Verification Callback Idempotency</name>
+        <t>If a verifier sends the same callback multiple times (e.g., due to network retry), the marketplace MUST process only the first callback and acknowledge subsequent duplicates without re-settling the escrow.</t>
+      </section>
+    </section>
+    <section anchor="s-9-security-considerations">
+      <name>9. Security Considerations</name>
+      <section anchor="s-9-1-verifier-key-management">
+        <name>9.1 Verifier Key Management</name>
+        <t>Each VCAP verifier MUST maintain an Ed25519 keypair:</t>
+        <ul>
+          <li>
+            <t>The private key is used to sign <tt>proof_signature</tt> values (Section 5.2)</t>
+          </li>
+          <li>
+            <t>The public key MUST be registered with each marketplace the verifier serves</t>
+          </li>
+          <li>
+            <t>Key rotation SHOULD be performed at minimum annually</t>
+          </li>
+          <li>
+            <t>On rotation, the new public key MUST be registered with all marketplaces before the old key is retired</t>
+          </li>
+          <li>
+            <t>Private keys MUST be stored with at least <tt>0600</tt> file permissions and SHOULD use hardware security modules in production deployments</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-9-2-transport-security">
+        <name>9.2 Transport Security</name>
+        <t>All VCAP messages MUST be transmitted over TLS 1.2 or later.</t>
+      </section>
+      <section anchor="s-9-3-callback-authentication">
+        <name>9.3 Callback Authentication</name>
+        <t>The marketplace MUST authenticate verification callbacks to prevent spoofing. Recommended mechanisms:</t>
+        <ul>
+          <li>
+            <t>Ed25519 signature verification (see Section 5.2)</t>
+          </li>
+          <li>
+            <t>Mutual TLS</t>
+          </li>
+          <li>
+            <t>Webhook signature verification</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-9-4-timing-safe-comparison">
+        <name>9.4 Timing-Safe Comparison</name>
+        <t>All signature comparisons (Ed25519 verification results, proof hash comparisons) MUST use constant-time comparison to prevent timing oracle attacks.</t>
+      </section>
+      <section anchor="s-9-5-proof-integrity">
+        <name>9.5 Proof Integrity</name>
+        <t>The <tt>proof_hash</tt> + <tt>proof_signature</tt> pair creates a <strong>dual-layer integrity check</strong>:</t>
+        <ul>
+          <li>
+            <t><tt>proof_hash</tt> verifies the proof content was not tampered with</t>
+          </li>
+          <li>
+            <t><tt>proof_signature</tt> verifies the proof was generated by the authorized verifier</t>
+          </li>
+        </ul>
+        <t>Both MUST be stored alongside the escrow settlement record for post-hoc auditability.</t>
+      </section>
+    </section>
+    <section anchor="s-10-platform-fees">
+      <name>10. Platform Fees</name>
+      <t>VCAP does not mandate a specific fee structure, but defines how fees SHOULD be represented:</t>
+      <section anchor="s-10-1-fee-declaration">
+        <name>10.1 Fee Declaration</name>
+        <sourcecode type="json">{
+  "platform_fee": {
+    "rate": 0.05,
+    "rate_type": "percentage",
+    "amount": 15,
+    "currency": "USD",
+    "split": {
+      "buyer_share": 0.5,
+      "seller_share": 0.5
+    }
+  }
+}
+</sourcecode>
+      </section>
+      <section anchor="s-10-2-fee-timing">
+        <name>10.2 Fee Timing</name>
+        <t>Fees SHOULD be calculated at settlement time (not at escrow creation), because:</t>
+        <ul>
+          <li>
+            <t>The provider's subscription tier may change between escrow creation and settlement</t>
+          </li>
+          <li>
+            <t>Partial completions may adjust the fee basis</t>
+          </li>
+          <li>
+            <t>Fee disputes should reference the fee at settlement time</t>
+          </li>
+        </ul>
+      </section>
+    </section>
+    <section anchor="s-11-extensibility">
+      <name>11. Extensibility</name>
+      <section anchor="s-11-1-custom-fields">
+        <name>11.1 Custom Fields</name>
+        <t>Implementations MAY add custom fields to any VCAP message using the <tt>metadata</tt> or <tt>custom</tt> objects. Standard VCAP processors MUST ignore unknown fields.</t>
+      </section>
+      <section anchor="s-11-2-verification-engine-extensions">
+        <name>11.2 Verification Engine Extensions</name>
+        <t>New verification engine types can be registered by publishing their:</t>
+        <ul>
+          <li>
+            <t>Supported <tt>verification_hints</tt> fields</t>
+          </li>
+          <li>
+            <t>Action types they may include in <tt>action_log</tt></t>
+          </li>
+          <li>
+            <t>Any custom <tt>proof_bundle</tt> fields</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-11-3-payment-rail-extensions">
+        <name>11.3 Payment Rail Extensions</name>
+        <t>VCAP is agnostic to the underlying payment rail. The <tt>escrow_hold</tt> and <tt>escrow_settlement</tt> messages use wallet identifiers that can map to:</t>
+        <ul>
+          <li>
+            <t>Internal platform wallets (balance-based)</t>
+          </li>
+          <li>
+            <t>Stripe Connect accounts</t>
+          </li>
+          <li>
+            <t>Cryptocurrency wallets using x402 protocol version 2 or a compatible successor profile</t>
+          </li>
+          <li>
+            <t>Bank accounts via ACH/SEPA</t>
+          </li>
+          <li>
+            <t>Any future payment method</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-11-4-upstream-protocol-drift">
+        <name>11.4 Upstream Protocol Drift</name>
+        <t>VCAP bindings to external protocols MUST identify the external protocol version or profile they were tested against. In particular, implementers MUST NOT infer AP2 fields or state transitions that are not present in the referenced AP2 specification. Unknown or newer upstream fields MUST be ignored unless a VCAP binding revision defines their semantics.</t>
+      </section>
+    </section>
+    <section anchor="s-12-conformance">
+      <name>12. Conformance</name>
+      <section anchor="s-12-1-conformance-levels">
+        <name>12.1 Conformance Levels</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Level</th>
+              <th>Requirements</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>VCAP Core</td>
+              <td>Implement all message formats, state machines, and escrow transitions from Sections 3-4</td>
+            </tr>
+            <tr>
+              <td>VCAP Verified</td>
+              <td>Core + cryptographic binding from Section 5 (proof_hash, proof_signature)</td>
+            </tr>
+            <tr>
+              <td>VCAP Full</td>
+              <td>Verified + hash-chained action logs + agent identity binding + timeout escalation</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-12-2-implementation-checklist">
+        <name>12.2 Implementation Checklist</name>
+        <t>A conformant implementation MUST:</t>
+        <ul>
+          <li>
+            <t>[ ] Generate and process all seven message types (Sections 3.1-3.7)</t>
+          </li>
+          <li>
+            <t>[ ] Implement the negotiation state machine (Section 4.1)</t>
+          </li>
+          <li>
+            <t>[ ] Implement the escrow state machine with atomic CAS transitions (Section 4.2)</t>
+          </li>
+          <li>
+            <t>[ ] Implement the verification state machine (Section 4.3)</t>
+          </li>
+          <li>
+            <t>[ ] Compute proof_hash per Section 5.1</t>
+          </li>
+          <li>
+            <t>[ ] Compute proof_signature per Section 5.2 (Ed25519)</t>
+          </li>
+          <li>
+            <t>[ ] Support delivery idempotency (Section 8.1)</t>
+          </li>
+          <li>
+            <t>[ ] Support escrow idempotency (Section 8.2)</t>
+          </li>
+          <li>
+            <t>[ ] Use constant-time comparison for signature verification (Section 9.4)</t>
+          </li>
+          <li>
+            <t>[ ] Store proof_hash and proof_signature in settlement records (Section 9.5)</t>
+          </li>
+        </ul>
+      </section>
+    </section>
+    <section anchor="s-13-reference-implementation">
+      <name>13. Reference Implementation</name>
+      <t>The reference implementation is available at:</t>
+      <t><strong>Repository:</strong> https://github.com/bkauto3/SwarmSync</t>
+      <table>
+        <thead>
+          <tr>
+            <th>Component</th>
+            <th>File</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Negotiation</td>
+            <td>apps/api/src/modules/ap2/ap2.service.ts</td>
+            <td>AP2 negotiation state machine</td>
+          </tr>
+          <tr>
+            <td>Escrow</td>
+            <td>apps/api/src/modules/payments/ap2.service.ts</td>
+            <td>Atomic escrow hold/release/refund</td>
+          </tr>
+          <tr>
+            <td>Wallet Ledger</td>
+            <td>apps/api/src/modules/payments/wallets.service.ts</td>
+            <td>Double-entry wallet with atomic guards</td>
+          </tr>
+          <tr>
+            <td>Verification Dispatch</td>
+            <td>apps/api/src/modules/conduit/conduit-verification.service.ts</td>
+            <td>Verification initiation and callback</td>
+          </tr>
+          <tr>
+            <td>Verification Hints</td>
+            <td>apps/api/src/modules/conduit/dto/verification-hints.dto.ts</td>
+            <td>VerificationHintsDto</td>
+          </tr>
+          <tr>
+            <td>Verification Callback</td>
+            <td>apps/api/src/modules/conduit/dto/verification-callback.dto.ts</td>
+            <td>VerificationCallbackDto</td>
+          </tr>
+          <tr>
+            <td>AP2-Conduit Bridge</td>
+            <td>apps/api/src/modules/conduit/conduit-ap2-bridge.service.ts</td>
+            <td>Session billing, invoice signing</td>
+          </tr>
+          <tr>
+            <td>Agent Identity</td>
+            <td>apps/api/src/modules/conduit/conduit-identity.service.ts</td>
+            <td>Ed25519 keys, signing</td>
+          </tr>
+          <tr>
+            <td>Outcomes</td>
+            <td>apps/api/src/modules/quality/outcomes.service.ts</td>
+            <td>Verification -&gt; escrow settlement</td>
+          </tr>
+          <tr>
+            <td>Trust &amp; Passport</td>
+            <td>apps/api/src/modules/conduit/conduit-passport.service.ts</td>
+            <td>Execution track record (see ATEP spec)</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+    <section anchor="appendix-a-complete-action-type-registry">
+      <name>Appendix A: Complete Action Type Registry</name>
+      <t>These are the standard action types for browser-automation verifiers. Other verifier types may define their own action vocabularies.</t>
+      <table>
+        <thead>
+          <tr>
+            <th>Action</th>
+            <th>Description</th>
+            <th>Cost Category</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>NAVIGATE</td>
+            <td>Load a URL</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>CLICK</td>
+            <td>Click an element</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>TYPE</td>
+            <td>Type into an input</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>FILL</td>
+            <td>Fill a form field</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>EXTRACT</td>
+            <td>Extract text content</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>SCREENSHOT</td>
+            <td>Capture a screenshot</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>SCROLL</td>
+            <td>Scroll the page</td>
+            <td>Free</td>
+          </tr>
+          <tr>
+            <td>WAIT</td>
+            <td>Wait for a duration</td>
+            <td>Free</td>
+          </tr>
+          <tr>
+            <td>WAIT_FOR</td>
+            <td>Wait for a selector</td>
+            <td>Free</td>
+          </tr>
+          <tr>
+            <td>KEY_PRESS</td>
+            <td>Press a keyboard key</td>
+            <td>Free</td>
+          </tr>
+          <tr>
+            <td>HOVER</td>
+            <td>Hover over an element</td>
+            <td>Free</td>
+          </tr>
+          <tr>
+            <td>SELECT_OPTION</td>
+            <td>Select a dropdown option</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>HANDLE_DIALOG</td>
+            <td>Dismiss/accept a dialog</td>
+            <td>Free</td>
+          </tr>
+          <tr>
+            <td>NAVIGATE_BACK</td>
+            <td>Go back in history</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>CONSOLE_MESSAGES</td>
+            <td>Read console output</td>
+            <td>Free</td>
+          </tr>
+          <tr>
+            <td>EVAL</td>
+            <td>Execute JavaScript</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>EXTRACT_MAIN</td>
+            <td>Extract main content</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>OUTPUT_TO_FILE</td>
+            <td>Save data to file</td>
+            <td>Free</td>
+          </tr>
+          <tr>
+            <td>ACCESSIBILITY_SNAPSHOT</td>
+            <td>Capture a11y tree</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>NETWORK_REQUESTS</td>
+            <td>Read network log</td>
+            <td>Free</td>
+          </tr>
+          <tr>
+            <td>MAP</td>
+            <td>Map site structure</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>CRAWL</td>
+            <td>Crawl multiple pages</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>FINGERPRINT</td>
+            <td>SHA-256 page fingerprint</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>CHECK_CHANGED</td>
+            <td>Compare fingerprints</td>
+            <td>Billable</td>
+          </tr>
+          <tr>
+            <td>EXPORT_PROOF</td>
+            <td>Export proof bundle</td>
+            <td>Free</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+    <section anchor="appendix-b-json-schema">
+      <name>Appendix B: JSON Schema</name>
+      <t>Machine-readable JSON Schema definitions for all VCAP message types are available at:</t>
+      <sourcecode>https://github.com/swarmsync-ai/vcap-spec/tree/main/schemas/
+</sourcecode>
+    </section>
+    <section anchor="appendix-c-relationship-to-aivs">
+      <name>Appendix C: Relationship to AIVS</name>
+      <t>The <strong>AI Visibility Verification Standard (AIVS)</strong> defines a proof bundle format (Ed25519 + SHA-256 hash chain) for AI browser scan verification. AIVS proof bundles are a valid VCAP proof format. When a VCAP verifier uses AIVS-compliant proof bundles:</t>
+      <ul>
+        <li>
+          <t>The <tt>proof_hash</tt> in the VCAP callback corresponds to the AIVS manifest hash</t>
+        </li>
+        <li>
+          <t>The <tt>proof_signature</tt> corresponds to the AIVS <tt>session_sig.txt</tt></t>
+        </li>
+        <li>
+          <t>The <tt>action_log</tt> corresponds to the AIVS <tt>audit_log.jsonl</tt></t>
+        </li>
+        <li>
+          <t>The AIVS <tt>verify.py</tt> can independently validate the proof without VCAP infrastructure</t>
+        </li>
+      </ul>
+      <t>This layering means AIVS proofs are portable: they can be verified both within a VCAP settlement flow and independently by any party with the proof bundle file.</t>
+    </section>
+    <section anchor="appendix-d-changelog">
+      <name>Appendix D: Changelog</name>
+      <table>
+        <thead>
+          <tr>
+            <th>Version</th>
+            <th>Date</th>
+            <th>Changes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1.2-draft</td>
+            <td>2026-09-04</td>
+            <td>Aligned AP2 relationship to the current mandate/UCP architecture; added verifier key identifiers and upstream-version pinning; updated x402 references to protocol v2.</td>
+          </tr>
+          <tr>
+            <td>1.1-draft</td>
+            <td>2026-04-16</td>
+            <td>Replaced HMAC-SHA256 with Ed25519 for proof_signature (Section 5.2, per AIKR CG Technical Note AI-KR-CG-TR-2026-001). Added verifier accountability section (Section 6.3). Aligned agent identity binding to Ed25519 (Section 5.4).</td>
+          </tr>
+          <tr>
+            <td>1.0-draft</td>
+            <td>2026-03-14</td>
+            <td>Initial draft specification</td>
+          </tr>
+        </tbody>
+      </table>
+      <t>
+        <strong>Copyright (c) 2026 SwarmSync.AI. Licensed under MIT / Apache 2.0 (dual-licensed).</strong>
+      </t>
+    </section>
+  </middle>
+</rfc>

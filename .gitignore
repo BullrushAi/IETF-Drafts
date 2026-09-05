@@ -1,0 +1,25 @@
+# Operating System Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+._*
+
+# Logs and runtime artifacts
+*.log
+*.tmp
+_probe*
+_genesis*
+cookies.txt
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example

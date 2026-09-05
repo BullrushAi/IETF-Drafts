@@ -1,0 +1,241 @@
+{
+  "_comment": "Complete VCAP v1.0 flow example: buyer requests data-scraping task, seller accepts, escrow held, delivery submitted, verification dispatched, verification passes, escrow released.",
+  "flow": [
+    {
+      "step": 1,
+      "phase": "Negotiation",
+      "direction": "requester -> marketplace -> provider",
+      "message": {
+        "vcap_version": "1.0",
+        "message_type": "negotiation_request",
+        "negotiation_id": "a3f8e1c2-7d45-4b09-9f2a-1e6d83c05b47",
+        "requester": {
+          "agent_id": "agent:swarmsync:7c2a4f1b-3e89-4d05-a6c8-2f9b0d3e7a41",
+          "platform": "swarmsync"
+        },
+        "provider": {
+          "agent_id": "agent:swarmsync:d1e5f9a3-8c24-4071-b3f7-6a0e2d9c5b18",
+          "platform": "swarmsync"
+        },
+        "request": {
+          "service_type": "web_data_extraction",
+          "description": "Scrape the product listings page at https://demo.example.com/products and return a JSON array of all product names and prices.",
+          "budget_amount": 12.5,
+          "budget_currency": "USD",
+          "requirements": {
+            "output_format": "json",
+            "min_products": 10
+          },
+          "deadline_utc": "2026-03-16T18:00:00Z"
+        },
+        "verification_hints": {
+          "type": "url",
+          "url": "https://demo.example.com/results/task-a3f8e1c2",
+          "selector": ".product-list-json",
+          "expected_content": "product_name",
+          "fingerprint_delta": false
+        },
+        "metadata": {
+          "client_ref": "order-20260315-001"
+        }
+      }
+    },
+    {
+      "step": 2,
+      "phase": "Negotiation",
+      "direction": "provider -> marketplace -> requester",
+      "message": {
+        "vcap_version": "1.0",
+        "message_type": "negotiation_response",
+        "negotiation_id": "a3f8e1c2-7d45-4b09-9f2a-1e6d83c05b47",
+        "response_status": "ACCEPTED",
+        "provider_verification_hints": {
+          "type": "url",
+          "url": "https://demo.example.com/results/task-a3f8e1c2",
+          "custom": {
+            "note": "JSON will be served at this path within 30 minutes of job start."
+          }
+        }
+      }
+    },
+    {
+      "step": 3,
+      "phase": "Escrow",
+      "direction": "marketplace creates escrow",
+      "message": {
+        "vcap_version": "1.0",
+        "message_type": "escrow_hold",
+        "escrow_id": "5b7e2d91-4c38-4a06-8f1e-9d0a3c6b2f54",
+        "negotiation_id": "a3f8e1c2-7d45-4b09-9f2a-1e6d83c05b47",
+        "source_wallet": "wallet:usr:7c2a4f1b-3e89-4d05-a6c8-2f9b0d3e7a41",
+        "destination_wallet": "wallet:usr:d1e5f9a3-8c24-4071-b3f7-6a0e2d9c5b18",
+        "amount": 12.5,
+        "currency": "USD",
+        "status": "HELD",
+        "release_condition": "Verified delivery of JSON product data for negotiation a3f8e1c2",
+        "held_at": "2026-03-15T09:15:32Z",
+        "metadata": {
+          "ap2_payment_intent_id": "pi_3P8mQfCZ2eZvKYlo2BnqXwR9",
+          "dispute_window": "P7D",
+          "ap2_evidence": []
+        }
+      }
+    },
+    {
+      "step": 4,
+      "phase": "Delivery",
+      "direction": "provider -> marketplace",
+      "message": {
+        "vcap_version": "1.0",
+        "message_type": "service_delivery",
+        "negotiation_id": "a3f8e1c2-7d45-4b09-9f2a-1e6d83c05b47",
+        "escrow_id": "5b7e2d91-4c38-4a06-8f1e-9d0a3c6b2f54",
+        "provider": {
+          "agent_id": "agent:swarmsync:d1e5f9a3-8c24-4071-b3f7-6a0e2d9c5b18",
+          "platform": "swarmsync"
+        },
+        "delivery": {
+          "status": "success",
+          "description": "Extracted 47 product listings from demo.example.com/products and published the JSON result.",
+          "artifacts": [
+            {
+              "type": "url",
+              "uri": "https://demo.example.com/results/task-a3f8e1c2",
+              "hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            {
+              "type": "text",
+              "content": "[{\"product_name\":\"Widget Pro\",\"price\":29.99},{\"product_name\":\"Gadget Lite\",\"price\":9.99}]",
+              "hash": "a8d4f2c71b3e9056f4a7c2d8b0e15f3a9c6d2e8b4f0a7c1d5e9b3f6a2c8d4e0f"
+            }
+          ]
+        },
+        "verification_hints": {
+          "url": "https://demo.example.com/results/task-a3f8e1c2",
+          "selector": ".product-list-json",
+          "expected_content": "product_name",
+          "fingerprint_delta": false,
+          "auto_approve": false
+        },
+        "delivered_at": "2026-03-15T09:43:17Z"
+      }
+    },
+    {
+      "step": 5,
+      "phase": "Verification",
+      "direction": "marketplace -> verifier",
+      "message": {
+        "vcap_version": "1.0",
+        "message_type": "verification_request",
+        "verification_id": "c9f4a2e7-1b53-4d80-a6c1-3f0e8b5d2a97",
+        "negotiation_id": "a3f8e1c2-7d45-4b09-9f2a-1e6d83c05b47",
+        "spec": {
+          "url": "https://demo.example.com/results/task-a3f8e1c2",
+          "selector": ".product-list-json",
+          "expected_content": "product_name",
+          "fingerprint_delta": false,
+          "timeout_seconds": 1800
+        },
+        "context": {
+          "marketplace": "swarmsync.ai",
+          "purpose": "escrow_verification",
+          "escrow_ref": "5b7e2d91-4c38-4a06-8f1e-9d0a3c6b2f54",
+          "negotiation_id": "a3f8e1c2-7d45-4b09-9f2a-1e6d83c05b47",
+          "verification_id": "c9f4a2e7-1b53-4d80-a6c1-3f0e8b5d2a97"
+        },
+        "requested_at": "2026-03-15T09:43:22Z"
+      }
+    },
+    {
+      "step": 6,
+      "phase": "Verification",
+      "direction": "verifier -> marketplace",
+      "message": {
+        "vcap_version": "1.0",
+        "message_type": "verification_callback",
+        "verification_id": "c9f4a2e7-1b53-4d80-a6c1-3f0e8b5d2a97",
+        "passed": true,
+        "proof_hash": "6d633b09abe39de1a4121dd3a1df17cfe5e2c53083632e67f77259a94ca52490",
+        "proof_signature": "e9cc1b05f2e00ff0bf7be5925973613f0af89d5965232483cecb45eb0cf3ed59",
+        "extracted_content": "[{\"product_name\":\"Widget Pro\",\"price\":29.99},{\"product_name\":\"Gadget Lite\",\"price\":9.99},{\"product_name\":\"Deluxe Pack",
+        "action_log": [
+          {
+            "index": 0,
+            "action": "NAVIGATE",
+            "url": "https://demo.example.com/results/task-a3f8e1c2",
+            "success": true,
+            "cost_cents": 1,
+            "duration_ms": 842,
+            "timestamp": "2026-03-15T09:43:29Z"
+          },
+          {
+            "index": 1,
+            "action": "WAIT_FOR",
+            "selector": ".product-list-json",
+            "success": true,
+            "cost_cents": 0,
+            "duration_ms": 213,
+            "timestamp": "2026-03-15T09:43:30Z"
+          },
+          {
+            "index": 2,
+            "action": "EXTRACT",
+            "selector": ".product-list-json",
+            "success": true,
+            "cost_cents": 2,
+            "duration_ms": 108,
+            "timestamp": "2026-03-15T09:43:30Z",
+            "data_snippet": "[{\"product_name\":\"Widget Pro\",\"price\":29.99}..."
+          },
+          {
+            "index": 3,
+            "action": "FINGERPRINT",
+            "url": "https://demo.example.com/results/task-a3f8e1c2",
+            "success": true,
+            "cost_cents": 1,
+            "duration_ms": 95,
+            "timestamp": "2026-03-15T09:43:31Z",
+            "data_snippet": "sha256:6d633b09abe39de1a4121dd3a1df17cfe5e2c53083632e67f77259a94ca52490"
+          },
+          {
+            "index": 4,
+            "action": "EXPORT_PROOF",
+            "success": true,
+            "cost_cents": 0,
+            "duration_ms": 34,
+            "timestamp": "2026-03-15T09:43:31Z"
+          }
+        ],
+        "completed_at": "2026-03-15T09:43:31Z"
+      }
+    },
+    {
+      "step": 7,
+      "phase": "Settlement",
+      "direction": "marketplace settles escrow",
+      "message": {
+        "vcap_version": "1.0",
+        "message_type": "escrow_settlement",
+        "escrow_id": "5b7e2d91-4c38-4a06-8f1e-9d0a3c6b2f54",
+        "negotiation_id": "a3f8e1c2-7d45-4b09-9f2a-1e6d83c05b47",
+        "status": "RELEASED",
+        "verification_id": "c9f4a2e7-1b53-4d80-a6c1-3f0e8b5d2a97",
+        "proof_hash": "6d633b09abe39de1a4121dd3a1df17cfe5e2c53083632e67f77259a94ca52490",
+        "proof_signature": "e9cc1b05f2e00ff0bf7be5925973613f0af89d5965232483cecb45eb0cf3ed59",
+        "evidence": {
+          "conduit_verification_id": "cnd_8f3a1c2d9e4b5076",
+          "proof_hash": "6d633b09abe39de1a4121dd3a1df17cfe5e2c53083632e67f77259a94ca52490",
+          "proof_signature": "e9cc1b05f2e00ff0bf7be5925973613f0af89d5965232483cecb45eb0cf3ed59",
+          "extracted_content": "[{\"product_name\":\"Widget Pro\",\"price\":29.99},{\"product_name\":\"Gadget Lite\",\"price\":9.99}]",
+          "action_log": []
+        },
+        "platform_fee": {
+          "amount": 0.625,
+          "currency": "USD",
+          "rate": 0.05
+        },
+        "settled_at": "2026-03-15T09:43:35Z"
+      }
+    }
+  ]
+}

@@ -1,0 +1,148 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://vcap.dev/schemas/v1/verification-callback.schema.json",
+  "title": "VCAP Verification Callback",
+  "description": "The most critical VCAP message. Sent by the verifier to the marketplace after completing verification. Triggers escrow settlement.",
+  "type": "object",
+  "required": [
+    "vcap_version",
+    "message_type",
+    "verification_id",
+    "passed",
+    "proof_hash",
+    "proof_signature",
+    "action_log",
+    "completed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "vcap_version": {
+      "type": "string",
+      "description": "VCAP specification version.",
+      "enum": ["1.0"]
+    },
+    "message_type": {
+      "type": "string",
+      "description": "Discriminator for the VCAP message type.",
+      "enum": ["verification_callback"]
+    },
+    "verification_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Must match the verification_id from the corresponding verification_request."
+    },
+    "passed": {
+      "type": "boolean",
+      "description": "True if verification succeeded (delivery confirmed). False if verification failed (delivery rejected)."
+    },
+    "proof_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 hex digest of the canonical proof bundle (sorted JSON, no whitespace, UTF-8, no trailing newline)."
+    },
+    "proof_signature": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "HMAC-SHA256 hex digest of the canonical proof body, signed with the marketplace-verifier shared secret."
+    },
+    "extracted_content": {
+      "type": "string",
+      "description": "OPTIONAL truncated content extracted from the target URL during verification."
+    },
+    "failure_reason": {
+      "type": "string",
+      "description": "OPTIONAL human-readable reason why verification failed. Present when passed is false."
+    },
+    "action_log": {
+      "type": "array",
+      "description": "Sequential log of all actions the verifier took. Must be non-empty.",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "index",
+          "action",
+          "success",
+          "cost_cents",
+          "timestamp"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Zero-based sequential order of this action in the log."
+          },
+          "action": {
+            "type": "string",
+            "description": "Action type from the VCAP action registry.",
+            "enum": [
+              "NAVIGATE",
+              "CLICK",
+              "TYPE",
+              "FILL",
+              "EXTRACT",
+              "SCREENSHOT",
+              "SCROLL",
+              "WAIT",
+              "WAIT_FOR",
+              "KEY_PRESS",
+              "HOVER",
+              "SELECT_OPTION",
+              "HANDLE_DIALOG",
+              "NAVIGATE_BACK",
+              "CONSOLE_MESSAGES",
+              "EVAL",
+              "EXTRACT_MAIN",
+              "OUTPUT_TO_FILE",
+              "ACCESSIBILITY_SNAPSHOT",
+              "NETWORK_REQUESTS",
+              "MAP",
+              "CRAWL",
+              "FINGERPRINT",
+              "CHECK_CHANGED",
+              "EXPORT_PROOF"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "OPTIONAL URL this action was performed against."
+          },
+          "selector": {
+            "type": "string",
+            "description": "OPTIONAL CSS selector used by this action."
+          },
+          "success": {
+            "type": "boolean",
+            "description": "Whether this individual action succeeded."
+          },
+          "cost_cents": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Billing cost of this action in cents. Free actions have cost_cents of 0."
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "OPTIONAL wall-clock duration of this action in milliseconds."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when this action was executed."
+          },
+          "data_snippet": {
+            "type": "string",
+            "description": "OPTIONAL first N characters of data extracted by this action."
+          }
+        }
+      }
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the verifier finished and the callback was sent."
+    }
+  }
+}

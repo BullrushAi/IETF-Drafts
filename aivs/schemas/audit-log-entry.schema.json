@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aivs.dev/schemas/v1/audit-log-entry.schema.json",
+  "title": "AIVS Audit Log Entry",
+  "description": "A single newline-delimited JSON (JSONL) row in an AIVS hash-chained audit log. Each row records one agent action with its inputs, outputs, cost, and chain hashes. Rows must be ordered by 'id' ascending. See AIVS v1.0 Section 4.",
+  "type": "object",
+  "required": [
+    "id",
+    "session_id",
+    "action_type",
+    "tool_name",
+    "inputs_json",
+    "outputs_json",
+    "cost_cents",
+    "error",
+    "timestamp",
+    "prev_hash",
+    "row_hash"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Row identifier. Monotonically increasing, 1-indexed. Must be sequential with no gaps."
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique identifier for the session this row belongs to. Shared by all rows in the same audit_log.jsonl file."
+    },
+    "action_type": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Classification of the action performed. Default value is 'tool_call'. Implementations may define additional values.",
+      "examples": ["tool_call"]
+    },
+    "tool_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Namespaced identifier for the tool or action that was invoked (e.g., 'browser.navigate', 'browser.eval', 'browser.click').",
+      "examples": ["browser.navigate", "browser.extract", "browser.click", "browser.screenshot", "browser.eval"]
+    },
+    "inputs_json": {
+      "type": "string",
+      "description": "JSON-encoded action inputs as a string. Sensitive keys (password, token, api_key, secret, key, authorization, bearer, credential, passwd, passphrase) MUST be replaced with '[REDACTED]' before storage. The inputs_json field is informational and is NOT included in the row hash computation."
+    },
+    "outputs_json": {
+      "type": "string",
+      "description": "JSON-encoded action outputs as a string. MAY be truncated (reference implementation uses 2000-character limit). The outputs_json field is informational and is NOT included in the row hash computation."
+    },
+    "cost_cents": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Cost of this action in cents (integer). Use 0 for free actions."
+    },
+    "error": {
+      "type": "string",
+      "description": "Error message if the action failed. Empty string ('') if the action succeeded."
+    },
+    "timestamp": {
+      "type": "number",
+      "description": "Unix timestamp at the moment the action was recorded, with fractional seconds (e.g., 1710252645.123456). This value is included verbatim in the row hash computation."
+    },
+    "prev_hash": {
+      "type": "string",
+      "description": "The row_hash of the immediately preceding row. Must be an empty string ('') for the first row (id=1). For all subsequent rows, must be the exact row_hash of row (id-1).",
+      "oneOf": [
+        {
+          "const": "",
+          "description": "Empty string for the first row only."
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "description": "Lowercase hex SHA-256 hash of the previous row."
+        }
+      ]
+    },
+    "row_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA-256 hash of this row, computed as SHA-256('{id}:{session_id}:{action_type}:{tool_name}:{cost_cents}:{timestamp}:{prev_hash}'). Always 64 lowercase hexadecimal characters. See AIVS v1.0 Section 3.1."
+    }
+  },
+  "examples": [
+    {
+      "id": 1,
+      "session_id": "sess-d4e7f9a2b1c8",
+      "action_type": "tool_call",
+      "tool_name": "browser.navigate",
+      "inputs_json": "{\"url\": \"https://swarmsync.ai\"}",
+      "outputs_json": "{\"title\": \"SwarmSync.AI - Agent Marketplace\", \"url\": \"https://swarmsync.ai/\", \"status\": 200}",
+      "cost_cents": 1,
+      "error": "",
+      "timestamp": 1742000400.123456,
+      "prev_hash": "",
+      "row_hash": "cbee95465b6080e82ce9148338c2cc153a47bdeb32464ca6272a136770dae6de"
+    }
+  ]
+}

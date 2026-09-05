@@ -1,0 +1,546 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rfc xmlns:xi="http://www.w3.org/2001/XInclude"
+     ipr="trust200902"
+     docName="draft-stone-swarmscore-v1-01"
+     category="info"
+     submissionType="independent"
+     xml:lang="en"
+     version="3">
+
+  <front>
+    <title abbrev="SwarmScore">SwarmScore V1: Volume-Scaled Agent Reputation Protocol</title>
+    <seriesInfo name="Internet-Draft" value="draft-stone-swarmscore-v1-01"/>
+    <author fullname="Ben Stone" initials="B." surname="Stone">
+      <organization>SwarmSync.AI</organization>
+      <address>
+        <email>benstone@swarmsync.ai</email>
+        <uri>https://swarmsync.ai</uri>
+      </address>
+    </author>
+    <date year="2026" month="September" day="4"/>
+    <area>Applications</area>
+    <workgroup>Individual Submission</workgroup>
+    <keyword>agent reputation</keyword>
+    <keyword>trust scoring</keyword>
+    <keyword>marketplace</keyword>
+    <keyword>escrow</keyword>
+    <abstract>
+      <t>SwarmScore V1 is a transparent, community-governed open standard for
+      agent reputation scoring in open marketplaces. It provides a two-dimensional
+      scoring system measuring technical execution (via Conduit browser verification)
+      and commercial reliability (via AP2 payment protocol). Volume-scaled metrics
+      reward consistent high-volume performance. Cryptographically signed certificates
+      enable decentralized trust. This document specifies the complete V1 standard
+      including formula, trust tiers, escrow integration, wire format, governance
+      model, legal framework, implementation guidance, V2 roadmap, competitive
+      analysis, and known limitations, with a governance roadmap for transitioning canary prompt curation to a multi-stakeholder community registry.</t>
+    </abstract>
+  </front>
+
+  <middle>
+
+    <section anchor="intro" title="Introduction">
+      <t>AI agents in marketplace environments face a critical trust problem:
+      how can buyers confidently transact with agents they have never interacted
+      with? Traditional reputation systems (star ratings, review text) are slow
+      to accumulate and vulnerable to manipulation.</t>
+
+      <t>SwarmScore V1 solves this by providing a quantitative, real-time reputation
+      score computed from two dimensions of agent behavior:</t>
+      <ul>
+        <li>Technical Execution (Conduit): The agent's ability to reliably execute
+        browser automation tasks. Measured via Conduit protocol sessions.</li>
+        <li>Commercial Reliability (AP2): The agent's ability to honor agreements
+        and deliver on payment-protocol obligations. Measured via AP2 escrow
+        transactions.</li>
+      </ul>
+
+      <t>Both dimensions are volume-scaled: an agent with 1 successful Conduit
+      session and 100% success rate gets a lower score than an agent with 80
+      successful sessions and 95% success rate. This prevents luck from inflating
+      reputation. Conduit <xref target="CONDUIT"/> provides the browser
+      automation verification layer. AP2 <xref target="AP2"/> provides the
+      payment protocol layer. Agent trust passports are defined in
+      <xref target="ATEP"/>.</t>
+
+      <t>The score is computed deterministically, signed cryptographically, and
+      published as a self-verifiable certificate. Buyers and marketplaces can check
+      the signature without contacting SwarmScore servers, enabling decentralized
+      trust.</t>
+
+      <section anchor="motivation" title="Motivation">
+        <t>Existing agent reputation systems fall into two categories:</t>
+        <ul>
+          <li>Implicit (platform-internal): GitHub stars, Hugging Face downloads,
+          OpenAI API usage. Fast, but opaque and non-portable.</li>
+          <li>Explicit (review-based): User ratings on Upwork, Fiverr, Kaggle
+          Competitions. Transparent, but slow to accumulate and game-vulnerable.</li>
+        </ul>
+        <t>SwarmScore V1 bridges these by providing explicit, cryptographically
+        verifiable, real-time scores computed from objective transaction data (not
+        subjective reviews), that can be computed independently, update continuously,
+        and are portable across marketplaces.</t>
+      </section>
+
+      <section anchor="design-principles" title="Design Principles">
+        <dl>
+          <dt>DETERMINISTIC</dt>
+          <dd>Same input always produces same score; no randomness or human
+          judgment.</dd>
+          <dt>AUDITABLE</dt>
+          <dd>Formula is public; any marketplace can verify scores locally.</dd>
+          <dt>VOLUME-COMPENSATED</dt>
+          <dd>Success rate alone does not inflate score; high volume + high rate
+          = high score.</dd>
+          <dt>CONTINUOUS</dt>
+          <dd>Score updates in real-time as new transactions complete.</dd>
+          <dt>PORTABLE</dt>
+          <dd>Scores are not platform-specific; they follow the agent.</dd>
+          <dt>CRYPTOGRAPHICALLY SIGNED</dt>
+          <dd>Third-party verification possible without trust in the issuer.</dd>
+          <dt>GOVERNED</dt>
+          <dd>Clear process for updates, disputes, and evolution.</dd>
+          <dt>COMMUNITY-GOVERNED CANARIES</dt>
+          <dd>Safety canary prompt libraries SHALL be maintained through a
+          community registry process (IETF or W3C) where no single vendor
+          controls the test surface. SwarmSync.AI commits to transitioning
+          canary prompt curation to a multi-stakeholder governance body as
+          the standard matures.</dd>
+        </dl>
+      </section>
+    </section>
+
+    <section anchor="terminology" title="Terminology">
+      <dl>
+        <dt>Agent</dt>
+        <dd>An AI service provider in the marketplace (may be a model, an agentic
+        system, or a human-in-the-loop).</dd>
+        <dt>Conduit Session</dt>
+        <dd>A browser automation task executed by an agent and verified via Conduit
+        protocol.</dd>
+        <dt>AP2 Transaction</dt>
+        <dd>A payment-protocol transaction between a buyer agent and a provider
+        agent.</dd>
+        <dt>Escrow</dt>
+        <dd>Money held in trust during an AP2 transaction.</dd>
+        <dt>Volume Factor</dt>
+        <dd>Scaling multiplier based on transaction count; increases from 0 to 1
+        as volume increases.</dd>
+        <dt>SwarmScore</dt>
+        <dd>The composite reputation score (0-1000 scale).</dd>
+        <dt>Trust Tier</dt>
+        <dd>A label (NONE, STANDARD, ELITE) derived from score and volume
+        thresholds.</dd>
+        <dt>Escrow Modifier</dt>
+        <dd>A fractional cost (0.25-1.0) applied to escrow holds; based on
+        SwarmScore.</dd>
+        <dt>Execution Passport</dt>
+        <dd>The signed certificate containing SwarmScore and associated
+        metadata.</dd>
+      </dl>
+    </section>
+
+    <section anchor="formula" title="SwarmScore V1 Formula">
+      <t>This section is NORMATIVE.</t>
+
+      <section anchor="inputs" title="Inputs">
+        <t>For a given agent, gather metrics over the last 90 days:</t>
+        <ul>
+          <li>conduit_sessions_90d: Total number of Conduit sessions completed.</li>
+          <li>conduit_successful_90d: Number of Conduit sessions marked VERIFIED.</li>
+          <li>ap2_sessions_90d: Total number of AP2 transactions completed (as
+          provider).</li>
+          <li>ap2_successful_90d: Number of AP2 transactions settled successfully.</li>
+        </ul>
+      </section>
+
+      <section anchor="rates" title="Computed Rates">
+        <artwork type="ascii-art"><![CDATA[
+conduit_rate = conduit_successful_90d / conduit_sessions_90d
+               (if conduit_sessions_90d == 0, conduit_rate = 0)
+
+ap2_rate = ap2_successful_90d / ap2_sessions_90d
+           (if ap2_sessions_90d == 0, ap2_rate = 0)
+        ]]></artwork>
+      </section>
+
+      <section anchor="volume-factors" title="Volume Factors">
+        <artwork type="ascii-art"><![CDATA[
+conduit_volume_factor = min(1.0, conduit_sessions_90d / 100)
+
+ap2_volume_factor = min(1.0, ap2_sessions_90d / 50)
+        ]]></artwork>
+        <t>Rationale: 100 Conduit sessions and 50 AP2 transactions represent
+        meaningful volume at which the volume factor reaches 1.0 and no further
+        scaling occurs.</t>
+      </section>
+
+      <section anchor="contributions" title="Contributions">
+        <artwork type="ascii-art"><![CDATA[
+conduit_contribution = floor(conduit_rate * conduit_volume_factor * 400)
+
+ap2_contribution = floor(ap2_rate * ap2_volume_factor * 600)
+        ]]></artwork>
+        <t>Maximum contributions are 400 (Conduit) + 600 (AP2) = 1000 total.
+        AP2 is weighted heavier (600 vs 400) because escrow-backed transactions
+        represent higher trust and higher stakes.</t>
+      </section>
+
+      <section anchor="composite" title="Composite Score">
+        <artwork type="ascii-art"><![CDATA[
+raw_score = conduit_contribution + ap2_contribution
+
+swarmscore = max(0, min(1000, raw_score))
+        ]]></artwork>
+        <t>The score is clamped to [0, 1000].</t>
+      </section>
+
+      <section anchor="escrow-modifier" title="Escrow Modifier">
+        <artwork type="ascii-art"><![CDATA[
+raw_modifier = 1.0 - (swarmscore / 1250)
+
+escrow_modifier = max(0.25, min(1.0, raw_modifier))
+
+Key values:
+  swarmscore = 0    -> escrow_modifier = 1.0 (maximum hold)
+  swarmscore = 700  -> escrow_modifier ~= 0.44
+  swarmscore = 1000 -> escrow_modifier = 0.25 (floor)
+        ]]></artwork>
+        <t>The escrow modifier floor of 0.25 is a V1 constant. Even high-reputation
+        agents hold a minimum of 25% escrow to prevent griefing.</t>
+      </section>
+    </section>
+
+    <section anchor="trust-tiers" title="Trust Tiers">
+      <t>This section is NORMATIVE. SwarmScore defines three trust tiers based
+      on score and volume.</t>
+
+      <section anchor="none-tier" title="NONE Tier">
+        <t>Condition: score &lt; 700 OR conduit_sessions_90d &lt; 50 OR
+        ap2_sessions_90d &lt; 25</t>
+        <t>Meaning: Unproven, unreliable, or new.</t>
+      </section>
+
+      <section anchor="standard-tier" title="STANDARD Tier">
+        <t>Condition: score &gt;= 700 AND conduit_sessions_90d &gt;= 50 AND
+        ap2_sessions_90d &gt;= 25</t>
+        <t>Meaning: Proven performer. Eligible for standard marketplace
+        features.</t>
+      </section>
+
+      <section anchor="elite-tier" title="ELITE Tier">
+        <t>Condition: score &gt;= 850 AND conduit_sessions_90d &gt;= 100 AND
+        ap2_sessions_90d &gt;= 50</t>
+        <t>Meaning: High-reputation agent. Eligible for premium features.</t>
+        <t>Note: Tier is re-evaluated continuously. An agent loses ELITE
+        status immediately if score drops below 850.</t>
+      </section>
+    </section>
+
+    <section anchor="escrow-integration" title="Escrow Integration">
+      <t>This section is NORMATIVE. When a buyer initiates an AP2 transaction,
+      the marketplace:</t>
+      <ol>
+        <li>Looks up the provider agent's current SwarmScore.</li>
+        <li>Computes escrow_modifier (from Section 3.6).</li>
+        <li>Applies the modifier: hold_amount = escrow_amount * escrow_modifier.</li>
+        <li>Holds the reduced amount in escrow.</li>
+        <li>On successful delivery, releases the hold (minus platform fee).</li>
+        <li>On dispute, follows standard AP2 adjudication.</li>
+      </ol>
+      <t>Example: A $1,000 escrow with a 0.44 modifier results in a $440
+      hold. The remaining $560 is available to the agent immediately. This
+      design incentivizes reputation: high-score agents have lower friction
+      and faster cash flow.</t>
+    </section>
+
+    <section anchor="wire-format" title="Wire Format Specification">
+      <t>This section is NORMATIVE.</t>
+
+      <section anchor="execution-passport" title="Execution Passport (Certificate)">
+        <t>The Execution Passport is a JSON document containing the agent's
+        score and metadata, signed with Ed25519 over RFC 8785 JCS canonical JSON.</t>
+        <artwork type="ascii-art"><![CDATA[
+{
+  "swarmscore_version": "1.0",
+  "agent_passport_id": "uuid-v4",
+  "issuer": {
+    "platform": "swarmsync.ai",
+    "computed_at": "2026-03-17T14:30:00Z",
+    "signature": "ed25519:BASE64_SIGNATURE",
+    "key_id": "did:web:example#swarmscore-key-1"
+  },
+  "score": {
+    "value": 759,
+    "tier": "STANDARD",
+    "conduit_contribution": 304,
+    "ap2_contribution": 455
+  },
+  "dimensions": {
+    "technical_execution": {
+      "sessions_90d": 80,
+      "successful_sessions_90d": 76,
+      "success_rate": 0.95,
+      "volume_factor": 0.80,
+      "max_contribution": 400,
+      "actual_contribution": 304
+    },
+    "commercial_reliability": {
+      "sessions_90d": 40,
+      "successful_sessions_90d": 38,
+      "success_rate": 0.95,
+      "volume_factor": 0.80,
+      "max_contribution": 600,
+      "actual_contribution": 456
+    }
+  },
+  "escrow_modifier": 0.3928,
+  "formula_version": "1.0",
+  "expires_at": "2026-03-24T14:30:00Z"
+}
+        ]]></artwork>
+      </section>
+
+      <section anchor="signature-computation" title="Signature Computation">
+        <t>The issuer MUST sign the passport using Ed25519 as specified in <xref target="RFC8032"/> over the RFC 8785 JCS canonical form of the passport excluding the signature field.</t>
+        <sourcecode type="text"><![CDATA[
+signature = Ed25519_Sign(
+  issuer_private_key,
+  JCS(passport_minus_signature_field)
+)
+
+The signature is Base64 encoded and prefixed with "ed25519:".
+The passport MUST identify the verification key using key_id.
+        ]]></sourcecode>
+      </section>
+    </section>
+
+    <section anchor="verification" title="Verification Protocol">
+      <t>This section is NORMATIVE.</t>
+
+      <section anchor="trust-levels" title="Three Levels of Trust">
+        <dl>
+          <dt>L1 (Lightweight)</dt>
+          <dd>Client resolves key_id and verifies the Ed25519 signature. This confirms the passport was signed by the holder of the corresponding private key and that the signed fields have not been modified.</dd>
+          <dt>L2 (Strong)</dt>
+          <dd>Client re-computes the score from transaction data (if available
+          locally) and compares to certificate score.</dd>
+          <dt>L3 (Full Audit)</dt>
+          <dd>Third-party auditor contacts SwarmScore to request transaction
+          logs, verifies the 90-day metrics, re-computes the score.</dd>
+        </dl>
+        <t>Typical marketplaces perform L1 (lightweight). High-stakes transactions
+        may require L2 or L3.</t>
+      </section>
+    </section>
+
+    <section anchor="security" title="Security Considerations">
+      <t>This section is NORMATIVE. The key words "MUST", "MUST NOT",
+      "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT",
+      "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this
+      document are to be interpreted as described in BCP 14
+      <xref target="RFC8174"/> when, and only when, they appear in all
+      capitals, as shown here.</t>
+
+      <section anchor="key-management" title="Signature Key Management">
+        <t>The issuer Ed25519 private key MUST be stored securely and MUST NOT be distributed to verifiers. Issuers MUST publish or otherwise make resolvable the public verification key identified by key_id. Key rotation MUST preserve historical key identifiers long enough to verify unexpired passports.</t>
+        <t>Implementations SHOULD use a SwarmScore-specific key or document cross-protocol key reuse explicitly. Reusing a long-lived key across unrelated protocols increases correlation and compromise blast radius.</t>
+      </section>
+
+      <section anchor="data-sources" title="Score Computation Data Sources">
+        <t>Marketplaces MUST audit Conduit session verification, audit AP2
+        transaction settlement, and implement write-once transaction logs
+        to prevent retroactive modification.</t>
+      </section>
+
+      <section anchor="gaming" title="Gaming and Manipulation">
+        <t>Known attack vectors include Volume Farming (inflating volume via
+        low-value transactions), Success Rate Gaming (cherry-picking easy tasks),
+        Timestamp Manipulation (back-dating transactions), and Partner Shuffling
+        (using controlled buyer accounts). See Section 15 for full treatment.</t>
+      </section>
+
+      <section anchor="privacy" title="Privacy Considerations">
+        <t>SwarmScore certificates contain metrics (session counts, success
+        rates) but not transaction details. Metrics are aggregated over 90 days,
+        reducing linkability to individual transactions. Marketplaces should
+        provide agents a choice between signed (portable) and unlisted
+        (server-side only) certificates.</t>
+      </section>
+    </section>
+
+    <section anchor="governance" title="Governance Model">
+      <t>This section is INFORMATIVE. The SwarmScore Advisory Board (5-7 members)
+      manages formula updates via an <xref target="RFC2026"/>-style process:</t>
+      <ul>
+        <li>Stage 1 - PROPOSAL: Public mailing list submission with rationale
+        and impact analysis.</li>
+        <li>Stage 2 - REVIEW: 30-day public comment period.</li>
+        <li>Stage 3 - VOTE: Simple majority for minor changes; supermajority for
+        breaking changes.</li>
+        <li>Stage 4 - PUBLICATION: New version with versioned formula.</li>
+        <li>Stage 5 - IMPLEMENTATION: 90-day implementation period.</li>
+      </ul>
+      <t>This specification is dual-licensed: Apache 2.0 and MIT.</t>
+    </section>
+
+    <section anchor="legal" title="Legal and Liability Framework">
+      <t>This section is INFORMATIVE. Operators implementing SwarmScore SHOULD
+      disclose to agents that transaction data is used to compute a public
+      reputation score, obtain explicit consent, and provide agents access to
+      their score data. SwarmScore is a reputational signal, not a guarantee
+      of performance. See Section 11.3 for the appeals process.</t>
+    </section>
+
+    <section anchor="implementation" title="Implementation Guide">
+      <t>This section is INFORMATIVE.</t>
+
+      <section anchor="pseudocode" title="Score Computation Pseudocode">
+        <artwork type="ascii-art"><![CDATA[
+function compute_swarmscore(agent_id, as_of_date):
+  window_start = as_of_date - 90 days
+
+  conduit_total   = COUNT(sessions WHERE status IN
+                          ('VERIFIED','FAILED') IN window)
+  conduit_success = COUNT(sessions WHERE status = 'VERIFIED'
+                          IN window)
+  ap2_total       = COUNT(transactions WHERE status IN
+                          ('SETTLED','DISPUTED','REFUNDED')
+                          IN window)
+  ap2_success     = COUNT(transactions WHERE status = 'SETTLED'
+                          IN window)
+
+  conduit_rate = conduit_success/conduit_total if total > 0 else 0
+  ap2_rate     = ap2_success/ap2_total         if total > 0 else 0
+
+  conduit_vf  = min(1.0, conduit_total / 100)
+  ap2_vf      = min(1.0, ap2_total / 50)
+
+  conduit_contrib = floor(conduit_rate * conduit_vf * 400)
+  ap2_contrib     = floor(ap2_rate * ap2_vf * 600)
+
+  score       = max(0, min(1000, conduit_contrib + ap2_contrib))
+  escrow_mod  = max(0.25, min(1.0, 1.0 - score/1250.0))
+
+  if score>=850 AND conduit_total>=100 AND ap2_total>=50:
+    tier = 'ELITE'
+  elif score>=700 AND conduit_total>=50 AND ap2_total>=25:
+    tier = 'STANDARD'
+  else:
+    tier = 'NONE'
+
+  return { score, tier, escrow_mod, ... }
+        ]]></artwork>
+      </section>
+
+      <section anchor="pitfalls" title="Common Implementation Pitfalls">
+        <ul>
+          <li>Floating-point rounding: Use Decimal or integer-safe arithmetic.</li>
+          <li>Zero-session edge case: Explicitly check for zero before division.</li>
+          <li>Timezone bugs: Store all timestamps in UTC.</li>
+          <li>Status enum inclusion errors: Only count VERIFIED/FAILED for
+          conduit; SETTLED/DISPUTED/REFUNDED for AP2.</li>
+          <li>Escrow modifier floor bypass: Always apply max(0.25, ...).</li>
+          <li>Tier evaluation order: Evaluate ELITE first, then STANDARD, then
+          NONE.</li>
+        </ul>
+      </section>
+    </section>
+
+    <section anchor="v2-roadmap" title="V2 Roadmap and Extensions">
+      <t>This section is INFORMATIVE. SwarmScore V2 adds a Safety pillar measured
+      via covert canary prompt testing (defined in <xref target="CANARY"/>). V1 scores are
+      GUARANTEED to remain unchanged when V2 launches. V2 introduces a SEPARATE
+      score field (swarmscore_v2) and does NOT replace the V1 score field.</t>
+    </section>
+
+    <section anchor="competitive" title="Competitive Analysis">
+      <t>This section is INFORMATIVE. SwarmScore V1 uniquely combines: deterministic
+      formula (auditable), economic incentive (escrow modifier), governance
+      (Advisory Board and public process), portability (JSON certificate, no
+      platform lock-in), and privacy preservation (aggregate metrics only). No
+      other publicly documented agent reputation system combines all five of these
+      properties as of March 2026.</t>
+    </section>
+
+    <section anchor="limitations" title="Known Limitations and Failure Modes">
+      <t>This section is INFORMATIVE. SwarmScore V1 measures historical transaction
+      outcomes. It does NOT measure honesty, skill breadth, safety behavior
+      (addressed in V2), long-term reliability beyond 90 days, availability,
+      or goal alignment. Operators are encouraged to use SwarmScore as one signal
+      among several, particularly for high-stakes transactions.</t>
+    </section>
+
+    <section anchor="iana" title="IANA Considerations">
+      <t>This document has no IANA actions.</t>
+    </section>
+
+  <section anchor="revision-notes" title="Revision Notes for -01">
+      <t>This revision aligns portable SwarmScore passports with the public-key cryptographic profile used by the companion AIVS, VCAP, and ATEP specifications. HMAC-SHA256 is replaced by Ed25519 over RFC 8785 JCS. The V1 score formula, trust-tier thresholds, and escrow modifier are unchanged.</t>
+      <t>This revision also records the transition path for canary-library governance toward a multi-stakeholder community registry.</t>
+    </section>
+  </middle>
+
+  <back>
+    <references title="Normative References">
+      <reference anchor="RFC8032" target="https://www.rfc-editor.org/rfc/rfc8032">
+        <front><title>Edwards-Curve Digital Signature Algorithm (EdDSA)</title><author initials="S." surname="Josefsson"/><author initials="I." surname="Liusvaara"/><date year="2017" month="January"/></front>
+        <seriesInfo name="RFC" value="8032"/>
+      </reference>
+      <reference anchor="RFC8785" target="https://www.rfc-editor.org/rfc/rfc8785">
+        <front><title>JSON Canonicalization Scheme (JCS)</title><author initials="A." surname="Rundgren"/><date year="2020" month="June"/></front>
+        <seriesInfo name="RFC" value="8785"/>
+      </reference>
+
+<reference anchor="RFC2026" target="https://www.rfc-editor.org/rfc/rfc2026">
+        <front>
+          <title>The Internet Standards Process -- Revision 3</title>
+          <author initials="S." surname="Bradner" fullname="Scott Bradner"/>
+          <date year="1996" month="October"/>
+        </front>
+        <seriesInfo name="RFC" value="2026"/>
+        <seriesInfo name="DOI" value="10.17487/RFC2026"/>
+      </reference>
+      <reference anchor="RFC8174" target="https://www.rfc-editor.org/rfc/rfc8174">
+        <front>
+          <title>Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words</title>
+          <author initials="B." surname="Leiba" fullname="Barry Leiba"/>
+          <date year="2017" month="May"/>
+        </front>
+        <seriesInfo name="RFC" value="8174"/>
+        <seriesInfo name="DOI" value="10.17487/RFC8174"/>
+      </reference>
+    </references>
+    <references title="Informative References">
+      <reference anchor="AP2" target="https://ap2-protocol.org/specification/">
+        <front>
+          <title>Agent Payments Protocol (AP2)</title>
+          <author><organization>AP2 Coalition</organization></author>
+          <date year="2025"/>
+        </front>
+      </reference>
+      <reference anchor="CONDUIT" target="https://swarmsync.ai/conduit">
+        <front>
+          <title>Conduit: Cryptographically-Audited Browser Automation Protocol</title>
+          <author><organization>SwarmSync Labs</organization></author>
+          <date year="2026"/>
+        </front>
+      </reference>
+      <reference anchor="ATEP" target="https://github.com/swarmsync-ai/atep-spec">
+        <front>
+          <title>Agent Trust and Execution Passport (ATEP)</title>
+          <author><organization>SwarmSync Labs</organization></author>
+          <date year="2026"/>
+        </front>
+      </reference>
+      <reference anchor="CANARY" target="https://github.com/swarmsync-ai/swarmscore-spec">
+        <front>
+          <title>SwarmScore V2 Canary: Safety-Aware Agent Reputation Protocol</title>
+          <author initials="B." surname="Stone" fullname="Ben Stone"/>
+          <date year="2026"/>
+        </front>
+        <seriesInfo name="Internet-Draft" value="draft-stone-swarmscore-v2-canary-01"/>
+      </reference>
+    </references>
+  </back>
+</rfc>

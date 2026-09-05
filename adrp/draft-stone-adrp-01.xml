@@ -1,0 +1,1690 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rfc version="3" ipr="trust200902" docName="draft-stone-adrp-01" category="info" submissionType="independent" xml:lang="en" tocInclude="true" sortRefs="true" symRefs="true">
+  <front>
+    <title abbrev="ADRP">ADRP: Agent Dispute Resolution Protocol</title>
+    <seriesInfo name="Internet-Draft" value="draft-stone-adrp-01"/>
+    <author fullname="Ben Stone" initials="B." surname="Stone">
+      <organization>SwarmSync.AI</organization>
+      <address>
+        <email>benstone@swarmsync.ai</email>
+        <uri>https://swarmsync.ai</uri>
+      </address>
+    </author>
+    <date year="2026" month="September" day="4"/>
+    <area>Applications and Real-Time</area>
+    <workgroup>Independent Submission</workgroup>
+    <keyword>agentic commerce</keyword>
+    <keyword>dispute</keyword>
+    <keyword>arbitration</keyword>
+    <keyword>escrow</keyword>
+    <abstract>
+      <t>This document defines the Agent Dispute Resolution Protocol (ADRP), a wire protocol and state machine for resolving disputes that arise from cryptographically-attested agent-to-agent (A2A) transactions. ADRP is the companion specification to ATXN (draft-stone-atxn-01), which defines what an A2A transaction is. ADRP defines what happens when a party contests one.</t>
+      <t>ADRP severs an equivalence that every prior agentic commerce design has implicitly assumed: that a valid cryptographic proof bundle equals contractual satisfaction. It does not. Conduit-style cryptographic verifiers prove that an agent took specified actions; they do not prove that those actions satisfied the principal's Intent Mandate. ADRP bifurcates disputes into a <strong>cryptographic class</strong> (resolvable by code from the proof bundle and mandate chain) and a <strong>semantic class</strong> (resolvable only against pre-committed machine-readable acceptance criteria, with arbitration escalation when those criteria are absent or under-specified).</t>
+      <t>ADRP introduces the <strong>Arbitration Mandate</strong> as an ADRP extension that can be cryptographically linked to AP2 Intent/Cart/Payment Mandates or to an ATXN Standing Token. It is not an AP2 core mandate. The Arbitration Mandate records the principal's pre-committed dispute policy and is designed to support a written arbitration agreement where applicable; enforceability remains jurisdiction- and fact-specific.</t>
+      <t>ADRP defines a <strong>counter-attestation override pattern</strong> in which a signed RulingBundle supersedes a Conduit ProofBundle by a signing-time precedence rule rather than by mutation. Both the original attestation and the override are preserved forever in the hash chain; "override" is a verification-time computation, not a write.</t>
+      <t>Companion specifications:</t>
+      <ul>
+        <li>
+          <t><strong>ATXN</strong> (draft-stone-atxn-01): defines the A2A transaction primitive that ADRP resolves disputes over</t>
+        </li>
+        <li>
+          <t><strong>AIVS</strong> (draft-stone-aivs-01): cryptographic audit-trail substrate for proof bundles</t>
+        </li>
+        <li>
+          <t><strong>VCAP</strong> (draft-stone-vcap-01): verified-commerce escrow rails consumed by ADRP EscrowDirectives</t>
+        </li>
+        <li>
+          <t><strong>ATEP</strong> (draft-stone-atep-01): trust passports referenced by Standing Tokens in ADRP</t>
+        </li>
+      </ul>
+    </abstract>
+  </front>
+  <middle>
+    <section anchor="s-1-introduction">
+      <name>1. Introduction</name>
+      <section anchor="s-1-1-the-problem">
+        <name>1.1 The Problem</name>
+        <t>Conduit and similar cryptographic browser-automation verifiers produce SHA-256 hash-chained audit trails of agent task delivery. The proof bundles they produce are self-verifiable: any third party can replay the chain and confirm the recorded events occurred in the recorded order with the recorded signatures.</t>
+        <t>This is necessary but not sufficient.</t>
+        <t>A proof bundle attests that an agent took actions X, Y, and Z. It does not attest that X, Y, and Z <strong>satisfied</strong> the principal's Intent Mandate. Empirical data from Kleros (~40% of decentralized arbitration cases turn on spec ambiguity, not on whether action occurred) and from Upwork, Stripe Connect, and eBay (auto-resolve ceilings of 60-95% with all systems hitting walls below 95%) demonstrates that cryptographic proof of execution does not eliminate disputes — it relocates them to spec interpretation.</t>
+        <t>ADRP addresses the relocated dispute surface without breaking the cryptographic substrate.</t>
+      </section>
+      <section anchor="s-1-2-what-adrp-defines">
+        <name>1.2 What ADRP Defines</name>
+        <t>A five-layer protocol stacked on the existing Conduit + AP2 + ATXN stack:</t>
+        <sourcecode>Layer 5: Precedent corpus (signed RulingBundles indexed by Cart Mandate template hash)
+Layer 4: Tier router (L1 atomic / L2 mandated / L3 fiduciary)
+Layer 3: Resolution engine (cryptographic-class auto, semantic-class arbitration)
+Layer 2: Counter-attestation primitive (append-only override of Conduit ProofBundle)
+Layer 1: Arbitration Mandate (4th AP2 mandate, FAA §2 written agreement)
+</sourcecode>
+      </section>
+      <section anchor="s-1-3-what-adrp-deliberately-does-not-do">
+        <name>1.3 What ADRP Deliberately Does NOT Do</name>
+        <ul>
+          <li>
+            <t>ADRP does not modify the Conduit ProofBundle. Override is a verification-time precedence rule, not a write.</t>
+          </li>
+          <li>
+            <t>ADRP does not grant agents independent dispute standing. Standing belongs to principals only.</t>
+          </li>
+          <li>
+            <t>ADRP does not require statutory change. The Arbitration Mandate is the FAA §2 anchor.</t>
+          </li>
+          <li>
+            <t>ADRP does not specify how acceptance criteria are authored. The accompanying NLP-to-checks helper is normative for v0.1 deployment but its internals are out of scope.</t>
+          </li>
+          <li>
+            <t>ADRP does not promise &gt;90% auto-resolution. That is a deployment-conditional target, not a protocol property. See Section 19.1.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-1-4-design-tenets">
+        <name>1.4 Design Tenets</name>
+        <ul>
+          <li>
+            <t><strong>Bifurcation.</strong> Cryptographic and semantic disputes are different problems and require different paths.</t>
+          </li>
+          <li>
+            <t><strong>Append-only override.</strong> The hash chain is never mutated; "override" is a precedence rule applied at verification time.</t>
+          </li>
+          <li>
+            <t><strong>Principal-only standing.</strong> Agents flag; only principals file. Preserves the A2A executor-not-party model.</t>
+          </li>
+          <li>
+            <t><strong>Time-windowed default-resolution.</strong> Silence equals approval; default-resolution does most of the work.</t>
+          </li>
+          <li>
+            <t><strong>Economic friction on filing.</strong> Non-refundable filing fee deters spam without triggering securities classification.</t>
+          </li>
+          <li>
+            <t><strong>No tokenized stake.</strong> Filing fees are USD-denominated, non-refundable to the filer, refundable to the prevailing party. They are not securities under Howey.</t>
+          </li>
+          <li>
+            <t><strong>Pre-committed arbiter.</strong> The arbitration pool is named in the Arbitration Mandate at agent-deployment time, not selected post-hoc.</t>
+          </li>
+          <li>
+            <t><strong>Curated pool for v0.1.</strong> Decentralized token-staked pools deferred to v0.2 pending legal review.</t>
+          </li>
+          <li>
+            <t><strong>US-only B2B for v0.1.</strong> Cross-border, consumer, and PSD2/Reg E scope deferred to later versions.</t>
+          </li>
+        </ul>
+      </section>
+    </section>
+    <section anchor="s-2-terminology">
+      <name>2. Terminology</name>
+      <t>The key words "<strong>MUST</strong>", "<strong>MUST NOT</strong>", "<strong>REQUIRED</strong>", "<strong>SHALL</strong>", "<strong>SHALL NOT</strong>", "<strong>SHOULD</strong>", "<strong>SHOULD NOT</strong>", "<strong>RECOMMENDED</strong>", "<strong>MAY</strong>", and "<strong>OPTIONAL</strong>" in this document are to be interpreted as described in BCP 14 [RFC2119] [RFC8174].</t>
+      <t><strong>Conduit ProofBundle (H_c)</strong> — A SHA-256 hash-chained, Ed25519-signed audit trail produced by a cryptographic verifier of agent task delivery. The tip hash of this chain is referenced as <tt>H_c</tt> throughout this document.</t>
+      <t><strong>RulingBundle (R)</strong> — A signed attestation by an authorized arbitrator that supersedes an underlying Conduit ProofBundle via signing-time precedence. Defined in Section 7.</t>
+      <t><strong>DisputeBundle</strong> — The append-only chain of dispute events (filing, evidence, arbitrator assignment) anchored to a Conduit ProofBundle and consumed by <tt>verify_resolution</tt>.</t>
+      <t><strong>DisputeFlag</strong> — An advisory, agent-emitted notification that an anomaly has been detected. Non-binding. Expires if not ratified by the principal within the tier-specific window.</t>
+      <t><strong>DisputeFiling</strong> — A binding, principal-emitted dispute filing. Posts a filing fee. Anchors a DisputeBundle.</t>
+      <t><strong>EscrowDirective</strong> — The output of <tt>verify_resolution</tt>. Consumed by the AP2 Payment Mandate executor (or VCAP escrow rail) to release, refund, or split funds.</t>
+      <t><strong>Arbitration Mandate</strong> — The fourth element of the AP2 mandate chain, pre-signed by the principal at agent-deployment time. Defines the arbitration pool, governing-law clause, fee schedule, and L1/L2/L3 thresholds. Hash anchored in Standing Token.</t>
+      <t><strong>Cart Mandate Acceptance Criteria</strong> — A machine-readable structure embedded in the Cart Mandate that defines the deterministic checks Conduit attests against at delivery time. Defined in Section 11.</t>
+      <t><strong>Cryptographic-class dispute</strong> — A dispute whose resolution is computable deterministically from (DisputeBundle, RulingBundle, Standing Token chain). See Section 6.1.</t>
+      <t><strong>Semantic-class dispute</strong> — A dispute whose resolution requires arbitration against the Cart Mandate's acceptance criteria. See Section 6.2.</t>
+      <t><strong>Curated Arbitrator Pool</strong> — A SwarmSync-published list of vetted human-or-model arbitrators registered as DIDs in TRUSTED_REGISTRIES. v0.1 mechanism. Decentralized stake-weighted pools deferred to v0.2.</t>
+      <t><strong>Filing Fee</strong> — A non-refundable, non-transferable, USD-denominated fee posted at DisputeFiling. Refundable only to the prevailing party. Not a tokenized stake (avoids Howey securities trigger).</t>
+      <t><strong>Counter-attestation Override Pattern</strong> — The verification-time precedence rule by which a RulingBundle supersedes a Conduit ProofBundle. Both are preserved forever in the hash chain. See Section 7.</t>
+    </section>
+    <section anchor="s-3-architecture-overview">
+      <name>3. Architecture Overview</name>
+      <t>ADRP sits on top of the following existing layers:</t>
+      <sourcecode>+--------------------------------------+
+| ADRP (this spec)                     |
+| - Arbitration Mandate                |
+| - DisputeFlag / DisputeFiling        |
+| - RulingBundle (counter-attestation) |
+| - EscrowDirective                    |
++--------------------------------------+
+| ATXN (draft-stone-atxn-01)           |
+| - Bundle (5 elements)                |
+| - Standing Token                     |
+| - Tier / Profile                     |
++--------------------------------------+
+| AP2 / ACP / TAP / x402               |
+| - Intent / Cart / Payment Mandates   |
++--------------------------------------+
+| Conduit / AIVS                       |
+| - SHA-256 hash-chained ProofBundles  |
+| - Ed25519 signatures                 |
++--------------------------------------+
+</sourcecode>
+      <t>A dispute is the transition of an ATXN Bundle from <tt>delivered</tt> to <tt>disputed</tt> (per ATXN Section 8). ADRP defines what happens after that transition.</t>
+    </section>
+    <section anchor="s-4-the-arbitration-mandate">
+      <name>4. The Arbitration Mandate</name>
+      <section anchor="s-4-1-purpose">
+        <name>4.1 Purpose</name>
+        <t>The Arbitration Mandate records consent, forum, governing-law, fee, and tier parameters in a machine-verifiable form. It is designed to support enforceability under applicable arbitration law, but ADRP does not determine whether a particular mandate is legally enforceable. Deployments SHOULD obtain jurisdiction-specific legal review.</t>
+      </section>
+      <section anchor="s-4-2-required-fields">
+        <name>4.2 Required Fields</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Field</th>
+              <th>Type</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>arb_mandate_id</td>
+              <td>UUID</td>
+              <td>Unique identifier</td>
+            </tr>
+            <tr>
+              <td>principal_did</td>
+              <td>DID</td>
+              <td>Principal's DID</td>
+            </tr>
+            <tr>
+              <td>arbitrator_pool_ref</td>
+              <td>URI</td>
+              <td>Reference to the curated arbitrator pool (v0.1)</td>
+            </tr>
+            <tr>
+              <td>governing_law</td>
+              <td>String</td>
+              <td>E.g., "FAA + Delaware seat"</td>
+            </tr>
+            <tr>
+              <td>fee_schedule_ref</td>
+              <td>URI</td>
+              <td>Reference to filing fee schedule</td>
+            </tr>
+            <tr>
+              <td>tier_thresholds</td>
+              <td>Object</td>
+              <td>L1/L2/L3 transaction-value boundaries</td>
+            </tr>
+            <tr>
+              <td>appeal_panel_size</td>
+              <td>Integer</td>
+              <td>Default 5</td>
+            </tr>
+            <tr>
+              <td>language_of_proceedings</td>
+              <td>ISO 639-1</td>
+              <td>Default "en"</td>
+            </tr>
+            <tr>
+              <td>default_action</td>
+              <td>Enum</td>
+              <td>hold_and_reassign (RECOMMENDED), refund, release, or profile-defined action on SLA failure</td>
+            </tr>
+            <tr>
+              <td>principal_signature</td>
+              <td>Ed25519 base64</td>
+              <td>Principal's signature over canonical JSON</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-4-3-anchoring">
+        <name>4.3 Anchoring</name>
+        <t>The Arbitration Mandate's SHA-256 hash MUST be referenced in the principal's Standing Token (per ATXN Section 4) under a new field <tt>arb_mandate_hash</tt>. A Standing Token without an anchored Arbitration Mandate hash MUST NOT participate in an L2 or L3 ATXN Bundle.</t>
+      </section>
+      <section anchor="s-4-4-mutability">
+        <name>4.4 Mutability</name>
+        <t>The Arbitration Mandate MAY be replaced by the principal at any time, but the replacement MUST NOT apply retroactively to in-flight Bundles. In-flight Bundles MUST be resolved under the Arbitration Mandate that was anchored in the Standing Token at Bundle-authorization time.</t>
+      </section>
+    </section>
+    <section anchor="s-5-standing-and-the-flag-file-distinction">
+      <name>5. Standing and the Flag/File Distinction</name>
+      <section anchor="s-5-1-parties">
+        <name>5.1 Parties</name>
+        <t>The parties to any ADRP dispute are always <strong>principal-A and principal-B</strong>. Never agents. This preserves the A2A executor-not-party model from UETA §14 and Restatement (Third) of Agency.</t>
+      </section>
+      <section anchor="s-5-2-agent-flag-rights">
+        <name>5.2 Agent Flag Rights</name>
+        <t>Agents MAY emit <strong>DisputeFlags</strong> — advisory, low-cost (≤1 KB JSON), signed by the agent's Standing Token. A DisputeFlag is non-binding and does not initiate the dispute state machine. It alerts the principal that the agent has detected an anomaly worthy of principal attention.</t>
+      </section>
+      <section anchor="s-5-3-principal-file-rights">
+        <name>5.3 Principal File Rights</name>
+        <t>Only principals MAY emit <strong>DisputeFilings</strong> — binding, fee-posting, claim-coded events that initiate the dispute state machine. A DisputeFiling MAY reference a prior DisputeFlag via a <tt>flag_ref</tt> field, but a flag is not required.</t>
+      </section>
+      <section anchor="s-5-4-flag-expiration">
+        <name>5.4 Flag Expiration</name>
+        <t>A DisputeFlag expires if not ratified by the principal (via DisputeFiling that references it, or via explicit dismissal) within the tier-specific ratification window:</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Tier</th>
+              <th>Ratification Window</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>L1</td>
+              <td>N/A (no dispute)</td>
+            </tr>
+            <tr>
+              <td>L2</td>
+              <td>72h</td>
+            </tr>
+            <tr>
+              <td>L3</td>
+              <td>14d</td>
+            </tr>
+          </tbody>
+        </table>
+        <t>After expiration, the flag is preserved in the audit log but cannot anchor a DisputeFiling.</t>
+      </section>
+      <section anchor="s-5-5-pre-authorized-dispute-delegate">
+        <name>5.5 Pre-Authorized Dispute Delegate</name>
+        <t>A principal MAY pre-authorize a dispute delegate (e.g., a fractional general counsel, an enterprise compliance team) via a delegation field in the Arbitration Mandate. The delegate's filings are treated as principal-filed for standing purposes.</t>
+      </section>
+    </section>
+    <section anchor="s-6-dispute-taxonomy">
+      <name>6. Dispute Taxonomy</name>
+      <section anchor="s-6-1-cryptographic-class-disputes">
+        <name>6.1 Cryptographic-Class Disputes</name>
+        <t>Resolved by code from (DisputeBundle, RulingBundle, Standing Token chain) without arbitration.</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>bundle_integrity</td>
+              <td>SHA-256 chain breaks; signature verification fails</td>
+            </tr>
+            <tr>
+              <td>mandate_scope</td>
+              <td>Agent acted outside Cart Mandate scope (deterministic predicate)</td>
+            </tr>
+            <tr>
+              <td>token_authority</td>
+              <td>Standing Token revoked or expired pre-execution</td>
+            </tr>
+            <tr>
+              <td>timestamp_skew</td>
+              <td>Attestation timestamps violate ordering invariants</td>
+            </tr>
+            <tr>
+              <td>oracle_contradiction</td>
+              <td>Third-party oracle data contradicts attestation</td>
+            </tr>
+          </tbody>
+        </table>
+        <t>A cryptographic-class dispute MUST NOT be routed to arbitration. It is resolved by <tt>verify_resolution</tt> and emits an EscrowDirective directly.</t>
+      </section>
+      <section anchor="s-6-2-semantic-class-disputes">
+        <name>6.2 Semantic-Class Disputes</name>
+        <t>Resolved by arbitration against the Cart Mandate's acceptance criteria.</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>quality_mismatch</td>
+              <td>Deliverable doesn't satisfy acceptance_criteria.checks</td>
+            </tr>
+            <tr>
+              <td>spec_ambiguity</td>
+              <td>Acceptance criteria absent, under-specified, or contradictory</td>
+            </tr>
+            <tr>
+              <td>timing_breach</td>
+              <td>SLA missed (auto-resolvable if SLA is in Cart Mandate)</td>
+            </tr>
+            <tr>
+              <td>fitness_for_purpose</td>
+              <td>Deliverable formally compliant but unfit for principal's purpose</td>
+            </tr>
+          </tbody>
+        </table>
+        <t>A semantic-class dispute MUST be routed to the arbitrator pool named in the Arbitration Mandate.</t>
+      </section>
+      <section anchor="s-6-3-classification">
+        <name>6.3 Classification</name>
+        <t>The DisputeFiling's <tt>claim_code</tt> field declares the class. ADRP verifiers MUST validate that the declared class matches the evidence — a filing claiming <tt>bundle_integrity</tt> (cryptographic) but providing only natural-language complaints (semantic) MUST be reclassified or rejected.</t>
+      </section>
+      <section anchor="s-6-4-out-of-scope-v0-1">
+        <name>6.4 Out of Scope (v0.1)</name>
+        <t>Three classes from the ATXN dispute taxonomy are explicitly out of scope for ADRP v0.1:</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Class</th>
+              <th>Reason</th>
+              <th>Disposition</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>capacity_dispute</td>
+              <td>Principal-level adjudication; agent action set aside entirely</td>
+              <td>Bypass ADRP; refund-to-buyer</td>
+            </tr>
+            <tr>
+              <td>framework_dispute</td>
+              <td>Mandate framework validity contested</td>
+              <td>Upstream legal forum; ADRP halts and waits</td>
+            </tr>
+            <tr>
+              <td>Cross-border consumer disputes</td>
+              <td>Reg E / PSD2 / GDPR overlap not yet resolved</td>
+              <td>Defer to v0.2</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+    <section anchor="s-7-the-counter-attestation-override-pattern">
+      <name>7. The Counter-Attestation Override Pattern</name>
+      <t>This is the load-bearing technical primitive of ADRP.</t>
+      <section anchor="s-7-1-invariant">
+        <name>7.1 Invariant</name>
+        <t>The Conduit ProofBundle's tip hash <tt>H_c</tt> is <strong>never modified</strong>. No byte of the original ProofBundle is rewritten. Override is a verification-time precedence rule applied to the chain, not a mutation.</t>
+      </section>
+      <section anchor="s-7-2-rulingbundle-structure">
+        <name>7.2 RulingBundle Structure</name>
+        <sourcecode>R = {
+  type: "RulingBundle",
+  supersedes: H_c,                  // points at, does not replace
+  dispute_chain_tip: H_d,
+  verdict: "release" | "refund" | "partial",
+  partial_split: { to_buyer: 0.30, to_seller: 0.70 },  // if verdict == "partial"
+  rationale_hash: H_rationale,
+  arbitrator_did: "did:web:...",
+  arbitrator_vc_hash: H_vc,         // proves authorized at signing_time
+  signing_time: "&lt;RFC3339&gt;",
+  prev_hash: H_d
+}
+sig = Ed25519(arbitrator_priv, JCS(R))
+</sourcecode>
+      </section>
+      <section anchor="s-7-3-verification-rule">
+        <name>7.3 Verification Rule</name>
+        <blockquote>
+          <t>The latest valid RulingBundle (by <tt>signing_time</tt>) whose <tt>supersedes</tt> equals the underlying ProofBundle's tip hash AND whose signing arbitrator was authorized at <tt>signing_time</tt>, with chain integrity verified, is the <strong>verification winner</strong>.</t>
+        </blockquote>
+        <t>Both H_c and R are preserved forever. "Override" is the precedence rule, not a mutation.</t>
+      </section>
+      <section anchor="s-7-4-why-this-works">
+        <name>7.4 Why This Works</name>
+        <ul>
+          <li>
+            <t>Hash-chain immutability is preserved — no ProofBundle bytes are rewritten.</t>
+          </li>
+          <li>
+            <t>Verification is offline and deterministic — any third party can run <tt>verify_resolution</tt> and reach the same EscrowDirective.</t>
+          </li>
+          <li>
+            <t>Arbitrator authority is anchored to <tt>signing_time</tt>, not to verification time — so a later-revoked arbitrator's prior valid ruling remains valid.</t>
+          </li>
+          <li>
+            <t>The chain becomes a precedent corpus indexed by Cart Mandate template hash (Section 15).</t>
+          </li>
+        </ul>
+      </section>
+    </section>
+    <section anchor="s-8-wire-protocol">
+      <name>8. Wire Protocol</name>
+      <section anchor="s-8-1-message-types">
+        <name>8.1 Message Types</name>
+        <t>ADRP defines six wire message types:</t>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Type</th>
+              <th>Emitter</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>DisputeFlag</td>
+              <td>Agent</td>
+              <td>Advisory anomaly notification (non-binding)</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>DisputeFiling</td>
+              <td>Principal</td>
+              <td>Binding dispute initiation; posts filing fee</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>EvidenceSubmission</td>
+              <td>Either party</td>
+              <td>Hash-chained artifact append</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td>ArbitratorAssignment</td>
+              <td>Registry</td>
+              <td>Binds arbitrator DID to dispute</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td>RulingBundle</td>
+              <td>Arbitrator</td>
+              <td>Signed verdict + escrow directive (Section 7)</td>
+            </tr>
+            <tr>
+              <td>6</td>
+              <td>EscrowDirective</td>
+              <td>Verifier (derived)</td>
+              <td>Consumed by AP2 Payment Mandate or VCAP rail</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-8-2-common-message-envelope">
+        <name>8.2 Common Message Envelope</name>
+        <t>Every ADRP message MUST include:</t>
+        <sourcecode type="json">{
+  "msg_type": "&lt;one of the six&gt;",
+  "msg_id": "&lt;UUID&gt;",
+  "prev_hash": "&lt;SHA-256 of prior chain event&gt;",
+  "submitter_did": "&lt;DID&gt;",
+  "submitter_signature": "&lt;Ed25519 base64 over JCS of preceding fields&gt;",
+  "timestamp": "&lt;RFC3339&gt;",
+  "payload": { ... type-specific ... }
+}
+</sourcecode>
+      </section>
+      <section anchor="s-8-3-canonicalization">
+        <name>8.3 Canonicalization</name>
+        <t>All signatures MUST be over the JCS (RFC 8785) canonicalization of the signed object minus the signature field itself.</t>
+      </section>
+    </section>
+    <section anchor="s-9-state-machine">
+      <name>9. State Machine</name>
+      <section anchor="s-9-1-states">
+        <name>9.1 States</name>
+        <sourcecode>Pre-FILED:    FLAGGED         (agent-emitted; expires if not ratified)
+              FILED           (principal-emitted; fee posted)
+                ↓
+              ASSIGNED        (arbitrator bound to dispute)
+                ↓
+              EVIDENCE_OPEN   (parties submit evidence)
+                ↓
+              UNDER_REVIEW    (arbitrator deliberating)
+                ↓
+              RULED           (RulingBundle signed)
+                ↓
+              SETTLED         (EscrowDirective consumed by payment rail)
+
+Terminal:     WITHDRAWN       (filer withdraws; fee partial-refunded)
+              EXPIRED         (filing or evidence window expired)
+</sourcecode>
+      </section>
+      <section anchor="s-9-2-invariants">
+        <name>9.2 Invariants</name>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Invariant</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>I1</td>
+              <td>PaymentMandate.escrow_state == HOLD until SETTLED, WITHDRAWN, or EXPIRED</td>
+            </tr>
+            <tr>
+              <td>I2</td>
+              <td>No state mutates a prior attestation; transitions are new signed events appended to the dispute chain</td>
+            </tr>
+            <tr>
+              <td>I3</td>
+              <td>prev_hash of every event = SHA-256 of canonical-JSON of the immediately prior event</td>
+            </tr>
+            <tr>
+              <td>I4</td>
+              <td>dispute_chain[0].prev_hash == ProofBundle.tip_hash (anchors to Conduit chain)</td>
+            </tr>
+            <tr>
+              <td>I5</td>
+              <td>Only an arbitrator authorized by the Arbitration Mandate's pool may emit RulingBundle</td>
+            </tr>
+            <tr>
+              <td>I6</td>
+              <td>EscrowDirective MUST be derivable from (DisputeBundle, RulingBundle) by verify_resolution</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+    <section anchor="s-10-tier-parameters">
+      <name>10. Tier Parameters</name>
+      <table>
+        <thead>
+          <tr>
+            <th>Parameter</th>
+            <th>L1</th>
+            <th>L2</th>
+            <th>L3</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Dispute window</td>
+            <td>0 (atomic)</td>
+            <td>72h</td>
+            <td>14d</td>
+          </tr>
+          <tr>
+            <td>Filing fee</td>
+            <td>N/A</td>
+            <td>10% of value, $1-$100</td>
+            <td>10% of value, $50-$1,000</td>
+          </tr>
+          <tr>
+            <td>Arbitrator SLA</td>
+            <td>N/A</td>
+            <td>4h</td>
+            <td>24h</td>
+          </tr>
+          <tr>
+            <td>Arbitrator pool</td>
+            <td>N/A</td>
+            <td>Curated AI panel (3 of 5)</td>
+            <td>Curated human pool (3 of 5) + optional legal review</td>
+          </tr>
+          <tr>
+            <td>Override threshold</td>
+            <td>N/A</td>
+            <td>4-of-5 supermajority</td>
+            <td>4-of-5 supermajority</td>
+          </tr>
+          <tr>
+            <td>Max txn auto-arb</td>
+            <td>unlimited</td>
+            <td>$1,000</td>
+            <td>unlimited</td>
+          </tr>
+          <tr>
+            <td>Default if SLA missed</td>
+            <td>N/A</td>
+            <td>refund-to-buyer</td>
+            <td>refund-to-buyer</td>
+          </tr>
+          <tr>
+            <td>Frivolous slash</td>
+            <td>N/A</td>
+            <td>100% fee forfeited</td>
+            <td>100% fee forfeited</td>
+          </tr>
+          <tr>
+            <td>Novel-but-lost slash</td>
+            <td>N/A</td>
+            <td>50% fee forfeited</td>
+            <td>50% fee forfeited</td>
+          </tr>
+          <tr>
+            <td>Appeal window</td>
+            <td>N/A</td>
+            <td>12h</td>
+            <td>48h</td>
+          </tr>
+          <tr>
+            <td>Appeal panel</td>
+            <td>N/A</td>
+            <td>5 (up from 3)</td>
+            <td>5 + legal review</td>
+          </tr>
+          <tr>
+            <td>Appeal quorum</td>
+            <td>N/A</td>
+            <td>4 of 5</td>
+            <td>4 of 5</td>
+          </tr>
+          <tr>
+            <td>Escrow hold</td>
+            <td>0</td>
+            <td>7 days</td>
+            <td>21 days</td>
+          </tr>
+          <tr>
+            <td>Evidence file size cap</td>
+            <td>N/A</td>
+            <td>10 MB total, max 20 files</td>
+            <td>10 MB total, max 20 files</td>
+          </tr>
+        </tbody>
+      </table>
+      <section anchor="s-10-1-tier-routing">
+        <name>10.1 Tier Routing</name>
+        <t>Tier is determined by the ATXN Bundle's Tier (per ATXN Section 5) AND by the transaction value relative to the <tt>max_txn_auto_arb</tt> ceiling. A Bundle declared L2 with transaction value &gt; $1,000 MUST auto-escalate to L3.</t>
+      </section>
+      <section anchor="s-10-2-action-on-sla-miss">
+        <name>10.2 Action on SLA Miss</name>
+        <t>An SLA miss MUST NOT silently create a merits ruling. The Arbitration Mandate MUST declare a <tt>default_action</tt>. The RECOMMENDED value is <tt>hold_and_reassign</tt>, which preserves escrow and assigns a fallback panel. A mandate MAY select <tt>refund</tt>, <tt>release</tt>, or another profile-defined action when the parties explicitly pre-commit to that consequence.</t>
+        <t>This avoids turning arbitrator unavailability or denial-of-service into an automatic transfer of funds.</t>
+      </section>
+    </section>
+    <section anchor="s-11-cart-mandate-acceptance-criteria">
+      <name>11. Cart Mandate Acceptance Criteria</name>
+      <section anchor="s-11-1-required-field">
+        <name>11.1 Required Field</name>
+        <t>The Cart Mandate (existing AP2 element) MUST contain a new field:</t>
+        <sourcecode type="json">"acceptance_criteria": {
+  "schema_version": "1",
+  "checks": [
+    { "type": "regex", "selector": "$.output", "pattern": "..." },
+    { "type": "json_schema", "selector": "$.deliverable", "schema": { ... } },
+    { "type": "deterministic_function", "function_hash": "sha256:..." },
+    { "type": "human_review_required", "reason": "..." }
+  ],
+  "default_window_hours": 72,
+  "silence_equals": "release"
+}
+</sourcecode>
+      </section>
+      <section anchor="s-11-2-check-types">
+        <name>11.2 Check Types</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Evaluation</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>regex</td>
+              <td>Deterministic regex match against JSON-path selector</td>
+            </tr>
+            <tr>
+              <td>json_schema</td>
+              <td>JSON Schema validation against selector</td>
+            </tr>
+            <tr>
+              <td>deterministic_function</td>
+              <td>Pure function (referenced by hash, fetched from registry) executed against deliverable</td>
+            </tr>
+            <tr>
+              <td>human_review_required</td>
+              <td>Auto-routes to arbitration; flags spec as deliberately not auto-evaluable</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-11-3-conduit-attestation-against-checks">
+        <name>11.3 Conduit Attestation Against Checks</name>
+        <t>Conduit attests against <tt>acceptance_criteria.checks</tt> at delivery time. If all checks pass deterministically, the dispute path auto-resolves cryptographically. If checks include <tt>human_review_required</tt> OR are missing, dispute auto-routes to L2 semantic arbitration.</t>
+      </section>
+      <section anchor="s-11-4-the-authoring-helper-normative-for-deploy">
+        <name>11.4 The Authoring Helper (Normative for Deployment)</name>
+        <t>A natural-language-to-checks helper that converts a principal's English-language description into machine-checkable predicates is REQUIRED for v0.1 deployment. Its internals are out of scope for this specification, but its presence is normative: an ADRP deployment without a viable authoring helper will fail the &gt;50% auto-resolution threshold and the protocol's unit economics will collapse on sub-$10 transactions.</t>
+        <t>This is the load-bearing operational dependency surfaced in the synthesis as the EpistemicAuditor / Archaeologist dissent.</t>
+      </section>
+    </section>
+    <section anchor="s-12-arbitrator-pool">
+      <name>12. Arbitrator Pool</name>
+      <section anchor="s-12-1-v0-1-curated-pool">
+        <name>12.1 v0.1: Curated Pool</name>
+        <t>v0.1 ships with a <strong>SwarmSync-curated arbitrator pool</strong> — a centralized list of vetted human-or-model arbitrators registered as DIDs in TRUSTED_REGISTRIES. The pool is published at a stable URI referenced by every Arbitration Mandate.</t>
+      </section>
+      <section anchor="s-12-2-selection-algorithm">
+        <name>12.2 Selection Algorithm</name>
+        <t>Arbitrator selection MUST use a verifiable random function (VRF) seeded by the DisputeFiling's hash. The VRF output indexes into the curated pool. This produces deterministic-but-unpredictable selection — neither party can choose the arbitrator, but any third party can verify the selection was unbiased.</t>
+      </section>
+      <section anchor="s-12-3-pool-composition">
+        <name>12.3 Pool Composition</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Tier</th>
+              <th>Pool Composition</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>L2</td>
+              <td>AI arbitrator panels (model + curated checker)</td>
+            </tr>
+            <tr>
+              <td>L3</td>
+              <td>Human arbitrators (vetted, jurisdictionally-licensed where relevant) + optional legal review</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-12-4-arbitrator-credentialing">
+        <name>12.4 Arbitrator Credentialing</name>
+        <t>Every arbitrator MUST hold a Verifiable Credential issued by a trusted registry that:</t>
+        <ul>
+          <li>
+            <t>Names the arbitrator's DID;</t>
+          </li>
+          <li>
+            <t>States the arbitrator's <tt>valid_from</tt> and <tt>valid_until</tt> timestamps;</t>
+          </li>
+          <li>
+            <t>Names the arbitrator's qualifications (jurisdictional bar membership for L3 humans; model card + provenance for L2 AI panels);</t>
+          </li>
+          <li>
+            <t>Is signed by a registry in TRUSTED_REGISTRIES.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-12-5-v0-2-roadmap">
+        <name>12.5 v0.2 Roadmap</name>
+        <t>Decentralized stake-weighted arbitrator pools are deferred to v0.2 pending legal review on securities classification, jurisdictional enforceability, and Sybil resistance.</t>
+      </section>
+    </section>
+    <section anchor="s-13-filing-fee-economics">
+      <name>13. Filing Fee Economics</name>
+      <section anchor="s-13-1-fee-structure">
+        <name>13.1 Fee Structure</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Parameter</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Fee rate</td>
+              <td>10% of transaction value</td>
+            </tr>
+            <tr>
+              <td>Floor</td>
+              <td>$1 (L2) / $50 (L3)</td>
+            </tr>
+            <tr>
+              <td>Ceiling</td>
+              <td>$100 (L2) / $1,000 (L3)</td>
+            </tr>
+            <tr>
+              <td>Denomination</td>
+              <td>USD (fiat or USDC stablecoin)</td>
+            </tr>
+            <tr>
+              <td>Refund</td>
+              <td>To prevailing party only</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-13-2-why-not-a-tokenized-stake">
+        <name>13.2 Why Not a Tokenized Stake</name>
+        <t>The fee is designed as a non-transferable, USD-denominated filing charge rather than a tokenized investment stake. ADRP makes no determination about securities, payments, money-transmission, tax, or consumer-law classification; deployments MUST obtain applicable legal review.</t>
+      </section>
+      <section anchor="s-13-3-slashing">
+        <name>13.3 Slashing</name>
+        <table>
+          <thead>
+            <tr>
+              <th>Outcome</th>
+              <th>Filer's Fee</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Filer prevails</td>
+              <td>100% refunded</td>
+            </tr>
+            <tr>
+              <td>Filer loses; novel evidence</td>
+              <td>50% forfeited</td>
+            </tr>
+            <tr>
+              <td>Filer loses; frivolous (Conduit upheld, no new evidence)</td>
+              <td>100% forfeited</td>
+            </tr>
+            <tr>
+              <td>Filer withdraws before EVIDENCE_OPEN</td>
+              <td>75% refunded</td>
+            </tr>
+            <tr>
+              <td>Filer withdraws after EVIDENCE_OPEN</td>
+              <td>25% refunded</td>
+            </tr>
+          </tbody>
+        </table>
+        <t>Forfeited fees MAY fund the arbitrator pool and a public dispute-quality dataset.</t>
+      </section>
+      <section anchor="s-13-4-arbitrator-compensation">
+        <name>13.4 Arbitrator Compensation</name>
+        <t>Arbitrators are compensated 2% of transaction value (min $0.50) from the losing party's escrow. This sustains arbitrator economics on micro-disputes without additional protocol-level subsidy.</t>
+      </section>
+    </section>
+    <section anchor="s-14-appeals">
+      <name>14. Appeals</name>
+      <section anchor="s-14-1-trigger">
+        <name>14.1 Trigger</name>
+        <t>Either party MAY file an appeal within the tier-specific appeal window (12h L2, 48h L3). Appeals require a fresh filing fee at 1.5x the original rate.</t>
+      </section>
+      <section anchor="s-14-2-appeal-panel">
+        <name>14.2 Appeal Panel</name>
+        <t>A 5-arbitrator panel (up from the original 3-arbitrator quorum) selected via VRF from a different pool slice than the original ruling. Quorum: 4 of 5.</t>
+      </section>
+      <section anchor="s-14-3-finality">
+        <name>14.3 Finality</name>
+        <t>Appeal rulings are FINAL. There is no second appeal. Finality is a design feature.</t>
+      </section>
+      <section anchor="s-14-4-appeal-override">
+        <name>14.4 Appeal Override</name>
+        <t>An appeal RulingBundle supersedes the original RulingBundle by the same signing-time precedence rule (Section 7). Both the original ruling and the appeal ruling are preserved forever.</t>
+      </section>
+    </section>
+    <section anchor="s-15-precedent-corpus">
+      <name>15. Precedent Corpus</name>
+      <section anchor="s-15-1-indexing">
+        <name>15.1 Indexing</name>
+        <t>Every signed RulingBundle is content-addressed and indexed by:</t>
+        <ul>
+          <li>
+            <t>Cart Mandate template hash;</t>
+          </li>
+          <li>
+            <t>Dispute claim_code;</t>
+          </li>
+          <li>
+            <t>Verdict;</t>
+          </li>
+          <li>
+            <t>Arbitrator DID;</t>
+          </li>
+          <li>
+            <t>Signing time.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-15-2-citation-requirement">
+        <name>15.2 Citation Requirement</name>
+        <t>Future arbitrators MUST query the precedent corpus for prior rulings on similar Cart Mandate templates and either CITE or DISTINGUISH them in their RulingBundle's <tt>rationale_hash</tt> content.</t>
+      </section>
+      <section anchor="s-15-3-v0-1-vs-v0-2">
+        <name>15.3 v0.1 vs v0.2</name>
+        <t>v0.1 ships the data layer (signed rulings, indexed, queryable by hash). v0.2 ships the search and citation infrastructure (semantic search, similarity scoring, citation graph). A pre-v0.1 commitment per the RemixForge dissent: ship the data-collection pipeline in v0.1 even if productized search is deferred. Otherwise the corpus accumulates in a schema that requires breaking changes.</t>
+      </section>
+    </section>
+    <section anchor="s-16-verification-algorithm">
+      <name>16. Verification Algorithm</name>
+      <section anchor="s-16-1-the-verify-resolution-function">
+        <name>16.1 The verify_resolution Function</name>
+        <t>Any third party, given (DisputeBundle, RulingBundle), MUST be able to run <tt>verify_resolution</tt> offline and deterministically derive the same EscrowDirective.</t>
+        <sourcecode type="python">def verify_resolution(db: DisputeBundle, rb: RulingBundle) -&gt; Result:
+    # 1. Anchor checks
+    assert db.conduit_proof_ref == rb.supersedes
+    assert rb.prev_hash == db.chain_tip
+
+    # 2. Chain integrity
+    h = db.conduit_proof_ref
+    for ev in [db.filing, *db.evidence_chain, db.arbitrator_assignment]:
+        assert ev.prev_hash == h
+        assert verify_sig(ev.submitter_did, ev.sig, jcs(ev))
+        h = sha256(jcs(ev))
+    assert h == db.chain_tip
+
+    # 3. Arbitrator authority at signing_time (not now)
+    vc = fetch_vc(rb.arbitrator_vc_hash)
+    assert vc.subject == rb.arbitrator_did
+    assert vc.issuer in TRUSTED_REGISTRIES
+    assert vc.valid_from &lt;= rb.signing_time &lt;= vc.valid_until
+    assert verify_sig(vc.issuer, vc.sig, jcs(vc))
+
+    # 4. Ruling signature
+    assert verify_sig(rb.arbitrator_did, rb.sig, jcs(rb_minus_sig))
+
+    # 5. Verdict well-formed
+    assert rb.verdict in {"release", "refund", "partial"}
+    if rb.verdict == "partial":
+        assert sum(rb.partial_split.values()) == 1.0
+
+    # 6. Derive directive
+    return Result(valid=True, escrow_directive=EscrowDirective(
+        payment_mandate_ref=db.payment_mandate_ref,
+        action=rb.verdict,
+        split=rb.partial_split,
+        ruling_ref=sha256(jcs(rb))
+    ))
+</sourcecode>
+      </section>
+      <section anchor="s-16-2-determinism-requirement">
+        <name>16.2 Determinism Requirement</name>
+        <t>Two honest verifiers given the same inputs MUST reach the same EscrowDirective. If they do not, the implementation is non-conformant.</t>
+      </section>
+      <section anchor="s-16-3-offline-requirement">
+        <name>16.3 Offline Requirement</name>
+        <t><tt>verify_resolution</tt> MUST be executable offline from the supplied evidence package. Any arbitrator credential, status proof, or registry snapshot needed for verification MUST be embedded in or content-addressed by the DisputeBundle. Implementations MAY refresh those artifacts online before verification, but the verification result MUST NOT depend on live network availability.</t>
+      </section>
+    </section>
+    <section anchor="s-17-sdk-surface">
+      <name>17. SDK Surface</name>
+      <t>A conformant ADRP v0.1 SDK MUST expose at minimum the following six methods, implementable in ≤500 LOC total:</t>
+      <sourcecode type="python">emit_flag(
+    agent_standing_token,
+    claim_code,
+    evidence_ref
+) -&gt; DisputeFlag
+
+file_dispute(
+    payment_mandate,
+    claim_code,
+    claim_detail,
+    flag_ref: Optional[str] = None
+) -&gt; DisputeBundle
+
+submit_evidence(
+    dispute_id,
+    artifact_bytes,
+    mime_type
+) -&gt; EvidenceLink
+
+query_status(
+    dispute_id
+) -&gt; {state, chain_tip, latest_event}
+
+render_ruling(
+    dispute_id,
+    verdict,
+    partial_split: Optional[Dict] = None,
+    rationale: str = ""
+) -&gt; RulingBundle  # arbitrator-only
+
+verify_resolution(
+    dispute_bundle,
+    ruling_bundle
+) -&gt; {valid, escrow_directive}
+</sourcecode>
+      <section anchor="s-17-1-appeal-as-re-entry">
+        <name>17.1 Appeal as Re-Entry</name>
+        <t>An appeal is <tt>file_dispute</tt> with the <tt>prior_ruling_ref</tt> field set. No new SDK primitive is required.</t>
+      </section>
+      <section anchor="s-17-2-loc-budget">
+        <name>17.2 LOC Budget</name>
+        <t>Approximate breakdown:</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Method</th>
+              <th>LOC</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>emit_flag</td>
+              <td>~30</td>
+            </tr>
+            <tr>
+              <td>file_dispute</td>
+              <td>~80</td>
+            </tr>
+            <tr>
+              <td>submit_evidence</td>
+              <td>~50</td>
+            </tr>
+            <tr>
+              <td>query_status</td>
+              <td>~30</td>
+            </tr>
+            <tr>
+              <td>render_ruling</td>
+              <td>~80</td>
+            </tr>
+            <tr>
+              <td>verify_resolution</td>
+              <td>~120</td>
+            </tr>
+            <tr>
+              <td>Common envelope, signing, hash chain</td>
+              <td>~110</td>
+            </tr>
+            <tr>
+              <td>Total</td>
+              <td>~500</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-17-3-golden-test-cases">
+        <name>17.3 Golden Test Cases</name>
+        <t>A conformant SDK MUST pass the following test cases:</t>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Case</th>
+              <th>Expected Behavior</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1</td>
+              <td>clear_release</td>
+              <td>Conduit-attested, no flag, no filing, window expires → release</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>clear_refund</td>
+              <td>DisputeFiling with valid bundle_integrity claim, chain-break verified → refund</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>partial_split</td>
+              <td>Semantic dispute, RulingBundle with partial_split: {to_buyer: 0.30, to_seller: 0.70} → split</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td>attestation_override</td>
+              <td>Original ProofBundle preserved; latest valid RulingBundle wins on signing_time precedence</td>
+            </tr>
+            <tr>
+              <td>5</td>
+              <td>frivolous_dispute</td>
+              <td>Filer loses without novel evidence → 100% fee forfeited</td>
+            </tr>
+            <tr>
+              <td>6</td>
+              <td>malicious_requester_reject</td>
+              <td>Principal-A files invalid claim, Conduit upheld → fee forfeited, escrow releases to seller</td>
+            </tr>
+            <tr>
+              <td>7</td>
+              <td>expired_dispute</td>
+              <td>DisputeFiling outside tier window → rejected with EXPIRED terminal state</td>
+            </tr>
+            <tr>
+              <td>8</td>
+              <td>flag_ratification</td>
+              <td>DisputeFlag emitted, principal files within window referencing flag → flag promoted to filing</td>
+            </tr>
+            <tr>
+              <td>9</td>
+              <td>flag_expiration</td>
+              <td>DisputeFlag emitted, no principal action within window → flag preserved but cannot anchor filing</td>
+            </tr>
+            <tr>
+              <td>10</td>
+              <td>appeal_supersedes</td>
+              <td>Appeal RulingBundle supersedes original RulingBundle by signing-time precedence</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </section>
+    <section anchor="s-18-scope-locks-for-v0-1">
+      <name>18. Scope Locks for v0.1</name>
+      <t>The following scope locks are normative for v0.1 conformance per the ConstraintCartographer commitment:</t>
+      <table>
+        <thead>
+          <tr>
+            <th>Lock</th>
+            <th>Reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>US-only B2B</td>
+            <td>No consumer / cross-border / Reg E / PSD2 / GDPR overlap</td>
+          </tr>
+          <tr>
+            <td>Partnered custody</td>
+            <td>No SwarmSync-held escrow; relies on Stripe Connect, Bridge, Modern Treasury, or equivalent</td>
+          </tr>
+          <tr>
+            <td>Curated arbitrator pool</td>
+            <td>No token-staked decentralized pool (Howey)</td>
+          </tr>
+          <tr>
+            <td>Filing fee, not stake</td>
+            <td>Non-refundable, non-transferable, USD-denominated</td>
+          </tr>
+          <tr>
+            <td>Reputation logged but not modulating</td>
+            <td>Avoids bootstrap-circular trust dependency in v0.1</td>
+          </tr>
+          <tr>
+            <td>Per-principal preference model deferred</td>
+            <td>Data collection pipeline ships in v0.1; productized search ships in v0.2</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+    <section anchor="s-19-security-considerations">
+      <name>19. Security Considerations</name>
+      <section anchor="s-19-1-the-90-auto-resolution-target-is-not-a-pr">
+        <name>19.1 The &gt;90% Auto-Resolution Target Is NOT a Protocol Property</name>
+        <t>The most dangerous claim in any ADRP deployment is that &gt;90% of disputes will auto-resolve. This is a <strong>deployment-conditional</strong> target, not a protocol property. It depends on whether principals author Cart Mandates with sufficient <tt>acceptance_criteria.checks</tt> coverage.</t>
+        <t>Empirical base rates (Kleros, eBay, Upwork, Mechanical Turk) cap auto-resolution at 60-95%, with all systems hitting walls below 95%. Kleros data shows ~40% of cases turn on spec ambiguity. Two formal dissents (Archaeologist, EpistemicAuditor) preserved verbatim in the synthesis assign probabilities of 35-45% and 25% respectively to the median Cart Mandate having sufficient acceptance criteria.</t>
+        <t>Implementations MUST:</t>
+        <ul>
+          <li>
+            <t>Ship a normative NLP-to-checks authoring helper as load-bearing infrastructure;</t>
+          </li>
+          <li>
+            <t>Run a 90-day shadow-mode pilot before GA;</t>
+          </li>
+          <li>
+            <t>Measure check-coverage and auto-resolution rate as primary metrics;</t>
+          </li>
+          <li>
+            <t>Pivot to mandatory <tt>human_review_required</tt> flag if check coverage is &lt;30% at day 30.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-19-2-the-bifurcation-seam">
+        <name>19.2 The Bifurcation Seam</name>
+        <t>Adversaries will probe the seam between cryptographic-class and semantic-class disputes by filing claims structured as one but actually belonging to the other. The classification validation in Section 6.3 is REQUIRED, not optional. A non-validating implementation creates an attack surface that does not exist in unified-arbitration designs.</t>
+      </section>
+      <section anchor="s-19-3-arbitrator-collusion">
+        <name>19.3 Arbitrator Collusion</name>
+        <t>A 4-of-5 threshold is compromisable via collusion of 4 arbitrators. The VRF selection algorithm (Section 12.2) reduces but does not eliminate this risk. Mitigations:</t>
+        <ul>
+          <li>
+            <t>Diversify the curated pool across non-correlated risk profiles (operator, jurisdiction, model provider);</t>
+          </li>
+          <li>
+            <t>Monitor for arbitrator-pair correlation in rulings;</t>
+          </li>
+          <li>
+            <t>Periodically audit a random sample of rulings against an independent panel.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-19-4-filing-fee-as-dos-vector">
+        <name>19.4 Filing Fee as DoS Vector</name>
+        <t>A wealthy adversary can pay the filing fee repeatedly to harass a counterparty via dispute spam. Mitigations:</t>
+        <ul>
+          <li>
+            <t>Per-principal rate limit (max 0.5% of rolling 30-day transaction count);</t>
+          </li>
+          <li>
+            <t>Frivolous slash (100% fee forfeit) accumulating to reputation impact in v0.2;</t>
+          </li>
+          <li>
+            <t>Account suspension after N frivolous filings (operator policy).</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-19-5-standing-token-replay">
+        <name>19.5 Standing Token Replay</name>
+        <t>A revoked Standing Token MUST NOT anchor a new DisputeFiling. Verifiers MUST check the Standing Token revocation list at filing time. Cached revocation lists with a Profile-specific TTL are acceptable.</t>
+      </section>
+      <section anchor="s-19-6-time-skew-attacks">
+        <name>19.6 Time-Skew Attacks</name>
+        <t>The <tt>signing_time</tt> precedence rule (Section 7.3) is vulnerable to clock-skew attacks if any individual arbitrator can backdate a signature. Mitigations:</t>
+        <ul>
+          <li>
+            <t>Threshold-signature timestamps for L2 and L3 rulings (3-of-5 from a federated timestamping authority, per ATXN Section 9.3);</t>
+          </li>
+          <li>
+            <t>Reject rulings with <tt>signing_time</tt> more than 5 minutes in the future relative to the verifier's clock.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-19-7-jurisdictional-enforceability-of-the-arbi">
+        <name>19.7 Jurisdictional Enforceability of the Arbitration Mandate</name>
+        <t>The Arbitration Mandate's legal effect depends on formation, assent, capacity, scope, governing law, and forum rules. Implementations SHOULD obtain a written legal opinion in each deployment jurisdiction and MUST NOT represent ADRP conformance as a guarantee that a court will compel arbitration.</t>
+      </section>
+      <section anchor="s-19-8-sanctions-screening">
+        <name>19.8 Sanctions Screening</name>
+        <t>Every party receiving funds via an EscrowDirective MUST be screened against OFAC and equivalent sanctions lists. ADRP defines no specific screening mechanism, but a non-screening implementation is non-conformant for US deployment.</t>
+      </section>
+      <section anchor="s-19-9-principal-capacity-mid-dispute">
+        <name>19.9 Principal Capacity Mid-Dispute</name>
+        <t>If a principal's capacity attestation expires or is revoked mid-dispute (e.g., sanctions added, corporate dissolution), the dispute MUST be halted and routed to a <tt>capacity_dispute</tt> (Section 6.4), bypassing ADRP's normal flow and defaulting to refund-to-buyer.</t>
+      </section>
+      <section anchor="s-19-10-acknowledged-residual-risks">
+        <name>19.10 Acknowledged Residual Risks</name>
+        <ul>
+          <li>
+            <t><strong>Hallucinated mandates</strong> (a Cart Mandate the principal did not actually intend, generated by a compromised or LLM-confused operator): partially mitigated by L3 epistemic attestation per ATXN, unsolved for L1/L2.</t>
+          </li>
+          <li>
+            <t><strong>Adversarial sub-agency chains</strong> (deep delegation graphs that obscure the originating principal): bounded by <tt>sub_delegation_depth</tt> per ATXN; ADRP routes sub-agency disputes to the originating principal.</t>
+          </li>
+          <li>
+            <t><strong>Arbitrator pool capture</strong> (curated pool dominated by a single operator): mitigated by VRF selection but not eliminated; v0.2 decentralization is the long-term mitigation.</t>
+          </li>
+        </ul>
+      </section>
+    </section>
+    <section anchor="s-20-iana-considerations">
+      <name>20. IANA Considerations</name>
+      <t>This document requests IANA registration of the following:</t>
+      <section anchor="s-20-1-adrp-json-ld-context">
+        <name>20.1 ADRP JSON-LD Context</name>
+        <t>URI: <tt>https://swarmsync.ai/spec/adrp/v1</tt></t>
+      </section>
+      <section anchor="s-20-2-adrp-claim-code-registry">
+        <name>20.2 ADRP Claim Code Registry</name>
+        <t>A new IANA registry "ADRP Claim Codes" is requested. Initial entries:</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Class</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>bundle_integrity</td>
+              <td>cryptographic</td>
+              <td>SHA-256 chain breaks; signature verification fails</td>
+            </tr>
+            <tr>
+              <td>mandate_scope</td>
+              <td>cryptographic</td>
+              <td>Agent acted outside Cart Mandate scope</td>
+            </tr>
+            <tr>
+              <td>token_authority</td>
+              <td>cryptographic</td>
+              <td>Standing Token revoked or expired pre-execution</td>
+            </tr>
+            <tr>
+              <td>timestamp_skew</td>
+              <td>cryptographic</td>
+              <td>Attestation timestamps violate ordering invariants</td>
+            </tr>
+            <tr>
+              <td>oracle_contradiction</td>
+              <td>cryptographic</td>
+              <td>Third-party oracle data contradicts attestation</td>
+            </tr>
+            <tr>
+              <td>quality_mismatch</td>
+              <td>semantic</td>
+              <td>Deliverable doesn't satisfy acceptance_criteria.checks</td>
+            </tr>
+            <tr>
+              <td>spec_ambiguity</td>
+              <td>semantic</td>
+              <td>Acceptance criteria absent or under-specified</td>
+            </tr>
+            <tr>
+              <td>timing_breach</td>
+              <td>semantic</td>
+              <td>SLA missed</td>
+            </tr>
+            <tr>
+              <td>fitness_for_purpose</td>
+              <td>semantic</td>
+              <td>Deliverable formally compliant but unfit</td>
+            </tr>
+          </tbody>
+        </table>
+        <t>Registration policy: Specification Required (per RFC 8126).</t>
+      </section>
+      <section anchor="s-20-3-adrp-verdict-enum">
+        <name>20.3 ADRP Verdict Enum</name>
+        <t>A new IANA registry "ADRP Verdicts" is requested. Initial entries:</t>
+        <table>
+          <thead>
+            <tr>
+              <th>Verdict</th>
+              <th>Effect</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>release</td>
+              <td>Funds released to seller (counterparty)</td>
+            </tr>
+            <tr>
+              <td>refund</td>
+              <td>Funds returned to buyer (filer)</td>
+            </tr>
+            <tr>
+              <td>partial</td>
+              <td>Funds split per partial_split (must sum to 1.0)</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      <section anchor="s-20-4-adrp-trusted-registries-list">
+        <name>20.4 ADRP Trusted Registries List</name>
+        <t>A new IANA registry "ADRP Trusted Arbitrator Registries" is requested for the initial list of registries permitted to issue arbitrator Verifiable Credentials.</t>
+      </section>
+    </section>
+    <section anchor="s-21-acknowledgements">
+      <name>21. Acknowledgements</name>
+      <t>This specification synthesizes the output of the Ultimate Brainstorm v2.2 Agent Dispute Resolution Protocol session (2026-04-25), which spawned a 9-agent panel through four phases (Independent Divergence, Adversarial Cross-Examination, Convergence, Steelman) plus a Crux Engine analysis.</t>
+      <t>The author thanks the panel agents — EpistemicAuditor, Archaeologist, Quantifier, ConstraintCartographer, socratic-mentor, DarkMirror, IdeaMatrix, RemixForge, SoSpec, SpiderSpark — for the convergent architecture.</t>
+      <t>Specific contributions preserved as load-bearing in this specification:</t>
+      <ul>
+        <li>
+          <t><strong>EpistemicAuditor:</strong> the cryptographic / semantic bifurcation;</t>
+        </li>
+        <li>
+          <t><strong>Archaeologist:</strong> the empirical base-rate floor (Kleros 40% spec ambiguity, Upwork 5-day default-resolution, MTurk rejection abuse history);</t>
+        </li>
+        <li>
+          <t><strong>Quantifier:</strong> tier parameters (windows, fees, slashing);</t>
+        </li>
+        <li>
+          <t><strong>ConstraintCartographer:</strong> the Arbitration Mandate as FAA §2 anchor; v0.1 scope locks (US-only B2B, partnered custody, filing fee not stake);</t>
+        </li>
+        <li>
+          <t><strong>socratic-mentor:</strong> principal-only standing; the cryptographic / semantic / contractual taxonomy collapsed to two-way for v0.1;</t>
+        </li>
+        <li>
+          <t><strong>DarkMirror:</strong> the flag/file distinction; UMA optimistic-oracle pattern;</t>
+        </li>
+        <li>
+          <t><strong>IdeaMatrix:</strong> the tiered hybrid architecture;</t>
+        </li>
+        <li>
+          <t><strong>RemixForge:</strong> Cart Mandate acceptance_criteria as the spec-first resolution primitive;</t>
+        </li>
+        <li>
+          <t><strong>SoSpec:</strong> the wire protocol, state machine, SDK surface, and 28-line <tt>verify_resolution</tt> algorithm;</t>
+        </li>
+        <li>
+          <t><strong>SpiderSpark:</strong> the three-tier bonded-escalation structure; making the spec (not the execution) the disputed object.</t>
+        </li>
+      </ul>
+      <t>Three formal dissents are preserved:</t>
+      <ul>
+        <li>
+          <t><strong>Archaeologist</strong> — assigns &lt;40% probability to the &gt;90% auto-resolution target being met in v0.1.</t>
+        </li>
+        <li>
+          <t><strong>EpistemicAuditor</strong> — assigns 25% probability to median Cart Mandates having sufficient acceptance_criteria coverage to auto-resolve &gt;50% of semantic disputes.</t>
+        </li>
+        <li>
+          <t><strong>RemixForge</strong> — deferring the per-principal preference model to v0.2 is a 70%-probability strategic mistake.</t>
+        </li>
+      </ul>
+      <t>The author also acknowledges the prior decision-oracle synthesis on the A2A Transaction Definition (codified in ATXN draft-stone-atxn-00) which provides ADRP's substrate, and Paola Di Maio's prior critical review of the SwarmSync IETF Draft Stack (AIVS, VCAP, ATEP) which informed the cryptographic floor adopted here.</t>
+    </section>
+    <section anchor="s-22-references">
+      <name>22. References</name>
+      <section anchor="s-22-1-normative-references">
+        <name>22.1 Normative References</name>
+        <ul>
+          <li>
+            <t>[RFC2119] Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, March 1997.</t>
+          </li>
+          <li>
+            <t>[RFC8174] Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, May 2017.</t>
+          </li>
+          <li>
+            <t>[RFC8032] Josefsson, S. and I. Liusvaara, "Edwards-Curve Digital Signature Algorithm (EdDSA)", RFC 8032, January 2017.</t>
+          </li>
+          <li>
+            <t>[RFC8785] Rundgren, A., et al., "JSON Canonicalization Scheme (JCS)", RFC 8785, June 2020.</t>
+          </li>
+          <li>
+            <t>[RFC3339] Klyne, G. and C. Newman, "Date and Time on the Internet: Timestamps", RFC 3339, July 2002.</t>
+          </li>
+          <li>
+            <t>[RFC8126] Cotton, M., et al., "Guidelines for Writing an IANA Considerations Section in RFCs", BCP 26, RFC 8126, June 2017.</t>
+          </li>
+          <li>
+            <t>[W3C-VC-2.0] W3C, "Verifiable Credentials Data Model 2.0", https://www.w3.org/TR/vc-data-model-2.0/</t>
+          </li>
+          <li>
+            <t>[W3C-DID] W3C, "Decentralized Identifiers (DIDs) v1.0", https://www.w3.org/TR/did-core/</t>
+          </li>
+          <li>
+            <t>[draft-stone-atxn-01] Stone, B., "ATXN: Agent-to-Agent Transaction Definition Protocol", Internet-Draft, work in progress.</t>
+          </li>
+          <li>
+            <t>[draft-stone-aivs-01] Stone, B., "AIVS: Agentic Integrity Verification Standard", Internet-Draft, work in progress.</t>
+          </li>
+          <li>
+            <t>[draft-stone-vcap-01] Stone, B., "VCAP: Verified Commerce for Agent Protocols", Internet-Draft, work in progress.</t>
+          </li>
+          <li>
+            <t>[draft-stone-atep-01] Stone, B., "ATEP: Agent Trust and Execution Passport", Internet-Draft, work in progress.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-22-2-informative-references">
+        <name>22.2 Informative References</name>
+        <ul>
+          <li>
+            <t>[FAA] Federal Arbitration Act, 9 U.S.C. §§ 1-16</t>
+          </li>
+          <li>
+            <t>[NY-CONVENTION] Convention on the Recognition and Enforcement of Foreign Arbitral Awards, 1958</t>
+          </li>
+          <li>
+            <t>[UETA-14] Uniform Electronic Transactions Act §14, "Automated Transactions"</t>
+          </li>
+          <li>
+            <t>[REST-AGENCY-3D] Restatement (Third) of Agency, American Law Institute</t>
+          </li>
+          <li>
+            <t>[HOWEY] SEC v. W. J. Howey Co., 328 U.S. 293 (1946)</t>
+          </li>
+          <li>
+            <t>[AP2] Google Agentic Commerce, "Agent Payments Protocol", https://github.com/google-agentic-commerce/AP2</t>
+          </li>
+          <li>
+            <t>[KLEROS] Kleros, "Decentralized Court Protocol", https://kleros.io</t>
+          </li>
+          <li>
+            <t>[UMA] UMA Protocol, "Optimistic Oracle"</t>
+          </li>
+          <li>
+            <t>[STRIPE-CONNECT] Stripe, "Connect Disputes and Chargebacks"</t>
+          </li>
+          <li>
+            <t>[UPWORK-MEDIATION] Upwork, "Dispute Process for Hourly and Fixed-Price Contracts"</t>
+          </li>
+          <li>
+            <t>[VISA-CHARGEBACK-CODES] Visa Inc., "Visa Chargeback Reason Codes"</t>
+          </li>
+          <li>
+            <t>[OFAC-SANCTIONS] U.S. Treasury OFAC, "Specially Designated Nationals List"</t>
+          </li>
+        </ul>
+      </section>
+    </section>
+    <section anchor="appendix-a-json-schemas-informative">
+      <name>Appendix A: JSON Schemas (Informative)</name>
+      <section anchor="a-1-disputefiling">
+        <name>A.1 DisputeFiling</name>
+        <sourcecode type="json">{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://swarmsync.ai/spec/adrp/v1/dispute-filing.schema.json",
+  "title": "DisputeFiling",
+  "type": "object",
+  "required": ["msg_type", "msg_id", "prev_hash", "submitter_did", "submitter_signature", "timestamp", "payload"],
+  "properties": {
+    "msg_type": { "const": "DisputeFiling" },
+    "msg_id": { "type": "string", "format": "uuid" },
+    "prev_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "submitter_did": { "type": "string" },
+    "submitter_signature": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "payload": {
+      "type": "object",
+      "required": ["payment_mandate_ref", "claim_code", "claim_detail", "filing_fee"],
+      "properties": {
+        "payment_mandate_ref": { "type": "string" },
+        "claim_code": { "type": "string" },
+        "claim_detail": { "type": "string", "maxLength": 4096 },
+        "flag_ref": { "type": "string" },
+        "prior_ruling_ref": { "type": "string" },
+        "filing_fee": {
+          "type": "object",
+          "required": ["amount", "currency", "transaction_id"],
+          "properties": {
+            "amount": { "type": "number", "minimum": 1, "maximum": 1000 },
+            "currency": { "enum": ["USD", "USDC"] },
+            "transaction_id": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
+</sourcecode>
+      </section>
+      <section anchor="a-2-rulingbundle">
+        <name>A.2 RulingBundle</name>
+        <sourcecode type="json">{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://swarmsync.ai/spec/adrp/v1/ruling-bundle.schema.json",
+  "title": "RulingBundle",
+  "type": "object",
+  "required": ["type", "supersedes", "dispute_chain_tip", "verdict", "rationale_hash", "arbitrator_did", "arbitrator_vc_hash", "signing_time", "prev_hash", "sig"],
+  "properties": {
+    "type": { "const": "RulingBundle" },
+    "supersedes": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "dispute_chain_tip": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "verdict": { "enum": ["release", "refund", "partial"] },
+    "partial_split": {
+      "type": "object",
+      "properties": {
+        "to_buyer": { "type": "number", "minimum": 0, "maximum": 1 },
+        "to_seller": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "rationale_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "arbitrator_did": { "type": "string" },
+    "arbitrator_vc_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "signing_time": { "type": "string", "format": "date-time" },
+    "prev_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "sig": { "type": "string" }
+  }
+}
+</sourcecode>
+        <t>(Full schemas for all six message types are published at the IANA-registered URI.)</t>
+      </section>
+    </section>
+    <section anchor="appendix-b-worked-example-informative">
+      <name>Appendix B: Worked Example (Informative)</name>
+      <section anchor="b-1-scenario">
+        <name>B.1 Scenario</name>
+        <t>A small business principal (<tt>did:web:smb.example</tt>) dispatches an agent to research and book a $250 hotel reservation. The agent uses Conduit to record its actions. The reservation is booked, but the hotel is in the wrong city — the agent confused "Portland, OR" with "Portland, ME" due to an ambiguous Cart Mandate that did not specify state.</t>
+      </section>
+      <section anchor="b-2-sequence">
+        <name>B.2 Sequence</name>
+        <ol>
+          <li>
+            <t><strong>Agent emits DisputeFlag</strong> (advisory): claim_code <tt>quality_mismatch</tt>, evidence_ref pointing at the reservation confirmation. The agent's <tt>Standing Token</tt> signs the flag.</t>
+          </li>
+          <li>
+            <t><strong>Principal reviews flag</strong> within 72h ratification window. Principal agrees the booking is wrong.</t>
+          </li>
+          <li>
+            <t><strong>Principal emits DisputeFiling</strong>: claim_code <tt>quality_mismatch</tt>, claim_detail "City mismatch: requested Portland, OR; booked Portland, ME", filing_fee $25.00 USDC, flag_ref points at the agent's flag.</t>
+          </li>
+          <li>
+            <t><strong>Arbitrator assigned</strong> via VRF from L2 curated AI pool: <tt>did:web:arb-pool-001</tt>, 3-of-5 panel.</t>
+          </li>
+          <li>
+            <t><strong>EvidenceSubmission</strong> by principal: original Cart Mandate showing "Portland" without state qualifier; Conduit ProofBundle showing agent's reasoning trace.</t>
+          </li>
+          <li>
+            <t><strong>EvidenceSubmission</strong> by counterparty (hotel-side agent operator): the Cart Mandate's <tt>acceptance_criteria.checks</tt> is empty.</t>
+          </li>
+          <li>
+            <t><strong>Arbitrator panel deliberates</strong>. Finding: spec ambiguity (semantic-class). Cart Mandate did not specify state; agent's choice was reasonable but principal's intent was OR. Verdict: <tt>partial</tt>, split 70/30 to buyer/seller (buyer bears 30% due to ambiguous spec).</t>
+          </li>
+          <li>
+            <t><strong>RulingBundle signed</strong> by panel arbitrator. <tt>supersedes</tt> = ProofBundle tip hash. <tt>signing_time</tt> = within 4h SLA.</t>
+          </li>
+          <li>
+            <t><strong>EscrowDirective derived</strong>: $175 to buyer, $75 to seller, ruling_ref = SHA-256 of RulingBundle.</t>
+          </li>
+          <li>
+            <t><strong>AP2 Payment Mandate executor consumes EscrowDirective</strong>, executes split.</t>
+          </li>
+          <li>
+            <t><strong>Filing fee disposition</strong>: principal prevailed on the existence of dispute but lost on full refund (received 70%, not 100%). Outcome classified as "novel-but-lost" since spec ambiguity was a real issue but not fully attributable to seller. 50% of fee forfeited ($12.50); 50% refunded ($12.50).</t>
+          </li>
+        </ol>
+      </section>
+      <section anchor="b-3-verification">
+        <name>B.3 Verification</name>
+        <t>Any third party, given the resulting (DisputeBundle, RulingBundle), can run <tt>verify_resolution</tt> and reach the same EscrowDirective deterministically. Both the original ProofBundle and the RulingBundle are preserved forever in the chain.</t>
+      </section>
+      <section anchor="b-4-precedent">
+        <name>B.4 Precedent</name>
+        <t>The RulingBundle is indexed in the precedent corpus by Cart Mandate template hash. Future arbitrators ruling on Cart Mandates with similar <tt>acceptance_criteria.checks</tt> gaps for location specification MUST cite or distinguish this ruling.</t>
+      </section>
+    </section>
+    <section anchor="appendix-c-open-issues-for-shadow-mode-validatio">
+      <name>Appendix C: Open Issues for Shadow-Mode Validation</name>
+      <t>The following questions are explicitly UNRESOLVED in v0.1 and MUST be answered by a 90-day shadow-mode pilot before GA:</t>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Question</th>
+            <th>Falsification Threshold</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Will principals author Cart Mandates with ≥3 acceptance_criteria.checks of ≥3/5 quality?</td>
+            <td>&lt;30% coverage at day 30 → ship NLP→checks helper as mandatory</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Will the auto-resolution rate hit 60%+?</td>
+            <td>&lt;60% at day 60 → escalate to architectural review</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Will the frivolous filing rate stay below 2%?</td>
+            <td>&gt;2% at day 60 → tighten filing fee floor</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Will the curated arbitrator pool meet SLA at scale?</td>
+            <td>&gt;5% SLA breaches at day 90 → expand pool or accelerate v0.2</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>Will the Arbitration Mandate be challenged in court?</td>
+            <td>Any court challenge → seek immediate written legal opinion</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>Will the precedent corpus accumulate fast enough to be useful?</td>
+            <td>&lt;100 corpus queries by arbitrators at month 3 → revisit RemixForge dissent</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td>Are tier thresholds calibrated correctly?</td>
+            <td>Filing rate &gt;5% (too low) or &lt;0.05% (too high) → recalibrate fee structure</td>
+          </tr>
+        </tbody>
+      </table>
+      <t>GA is gated on:</t>
+      <ul>
+        <li>
+          <t>(auto-resolution rate ≥ 60%) AND</t>
+        </li>
+        <li>
+          <t>(frivolous filing rate ≤ 2%) AND</t>
+        </li>
+        <li>
+          <t>(zero court challenges to Arbitration Mandate) AND</t>
+        </li>
+        <li>
+          <t>(arbitrator SLA breaches ≤ 5%) AND</t>
+        </li>
+        <li>
+          <t>(median Cart Mandate has ≥ 1 non-trivial acceptance_criteria.check)</t>
+        </li>
+      </ul>
+      <t>
+        <strong>End of draft-stone-adrp-01</strong>
+      </t>
+      <t><em>Revision -01 prepared for IETF Datatracker submission</em> <em>Companion drafts: ATXN-00, AIVS-01, VCAP-01, ATEP-01</em></t>
+    </section>
+  </middle>
+</rfc>

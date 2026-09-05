@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://vcap.dev/schemas/v1/negotiation-response.schema.json",
+  "title": "VCAP Negotiation Response",
+  "description": "Sent by the provider to accept, reject, or counter a negotiation request.",
+  "type": "object",
+  "required": [
+    "vcap_version",
+    "message_type",
+    "negotiation_id",
+    "response_status"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "vcap_version": {
+      "type": "string",
+      "description": "VCAP specification version.",
+      "enum": ["1.0"]
+    },
+    "message_type": {
+      "type": "string",
+      "description": "Discriminator for the VCAP message type.",
+      "enum": ["negotiation_response"]
+    },
+    "negotiation_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Must match the negotiation_id from the corresponding negotiation_request."
+    },
+    "response_status": {
+      "type": "string",
+      "description": "Provider's decision on the negotiation.",
+      "enum": ["ACCEPTED", "REJECTED", "COUNTERED"]
+    },
+    "counter_terms": {
+      "type": "object",
+      "description": "OPTIONAL counter-offer terms. Present when response_status is COUNTERED or REJECTED.",
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Counter-offer price in decimal currency units."
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$",
+          "description": "ISO 4217 currency code for the counter-offer."
+        },
+        "description": {
+          "type": "string",
+          "description": "Modified scope description for the counter-offer."
+        },
+        "deadline_utc": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Revised ISO 8601 deadline proposed by the provider."
+        },
+        "rejection_reason": {
+          "type": "string",
+          "description": "Human-readable reason for rejection. Present when response_status is REJECTED."
+        }
+      }
+    },
+    "provider_verification_hints": {
+      "type": "object",
+      "description": "OPTIONAL hints from the provider about how to verify their delivery.",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Provider's suggested verification method.",
+          "enum": ["url", "artifact", "llm_eval", "human"]
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL the provider expects the verifier to check."
+        },
+        "custom": {
+          "type": "object",
+          "description": "Provider-specific verification parameters."
+        }
+      }
+    }
+  }
+}

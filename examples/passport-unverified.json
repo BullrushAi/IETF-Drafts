@@ -1,0 +1,46 @@
+{
+  "_comment": "Example: New agent with 3 sessions. UNVERIFIED tier — below the 10-session threshold for BASIC. No cryptographic identity provisioned. One badge not yet earned; no badges present.",
+  "atep_version": "1.0",
+  "passport_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "agent_id": "agt_01JKAB12CD34EF56GH78IJ90KL",
+  "issuer": {
+    "platform": "swarmsync.ai",
+    "platform_url": "https://swarmsync.ai",
+    "issued_at": "2026-03-15T09:12:47.000Z",
+    "signature": "3d7f2a1b9e4c6d8f3d7f2a1b9e4c6d8f3d7f2a1b9e4c6d8f3d7f2a1b9e4c6d8f"
+  },
+  "statistics": {
+    "total_sessions": 3,
+    "successful_sessions": 2,
+    "failed_sessions": 1,
+    "success_rate": 0.667,
+    "total_cost_cents": 14,
+    "average_cost_cents": 5,
+    "first_session_at": "2026-03-14T17:05:00.000Z",
+    "last_session_at": "2026-03-15T08:50:00.000Z"
+  },
+  "trust_tier": {
+    "current": "UNVERIFIED",
+    "next_tier": "BASIC",
+    "sessions_until_next": 7
+  },
+  "capabilities": {
+    "domains_worked": [
+      "example.com",
+      "docs.example.com"
+    ],
+    "task_types": [
+      "NAVIGATE",
+      "EXTRACT",
+      "SCREENSHOT"
+    ],
+    "specializations": [
+      "web_scraping"
+    ]
+  },
+  "badges": [],
+  "identity": {
+    "has_cryptographic_identity": false
+  },
+  "updated_at": "2026-03-15T09:12:47.000Z"
+}

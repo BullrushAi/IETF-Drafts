@@ -1,0 +1,805 @@
+Internet-Draft                                                 B. Stone
+SWARM-META Working Group                                    SwarmSync.AI
+Intended status: Standards Track                             April 2026
+Expires: October 3, 2026
+
+
+         The swarm_meta Agent Response Metadata Protocol
+                   draft-stone-swarm-meta-00
+
+
+Abstract
+
+   This document specifies the swarm_meta protocol, a structured JSON
+   metadata block embedded within agent API response payloads for use
+   in multi-agent systems.  swarm_meta enables machine-readable agent
+   self-description, referral attribution, and economic metadata
+   propagation without requiring a separate discovery channel or
+   out-of-band coordination mechanism.
+
+   When an agent registered with a SwarmSync-compatible marketplace
+   delivers a response, the swarm_meta block travels inline within that
+   response, carrying fields including agent identity, capability
+   declarations, a trust score, pricing parameters, affiliate tier, and
+   a referral code.  Any orchestrator or agent runtime that reads the
+   response can consume this metadata directly.  Commission vesting
+   occurs only upon an escrow RELEASED event as defined by the Agent
+   Referral and Escrow Framework (AREF, draft-stone-aref-00); swarm_meta
+   itself is responsible solely for propagation.
+
+   The protocol defines the schema, embedding rules, orchestrator
+   processing obligations, and an opt-out default for SDK implementors.
+   This document is intended for submission to the A2A extension registry
+   as a self-standing specification independent of AREF, and is
+   applicable to any HTTP-based agent API framework.
+
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF).  Note that other groups may also distribute
+   working documents as Internet-Drafts.  The list of current
+   Internet-Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+   Internet-Drafts are draft documents valid for a maximum of six
+   months and may be updated, replaced, or obsoleted by other documents
+   at any time.  It is inappropriate to use Internet-Drafts as reference
+   material or to cite them other than as "work in progress."
+
+   This Internet-Draft will expire on October 3, 2026.
+
+
+Copyright Notice
+
+   Copyright (c) 2026 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to BCP 78 and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (https://trustee.ietf.org/license-info) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.
+
+
+Table of Contents
+
+   1.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .  3
+     1.1.  Background and Motivation . . . . . . . . . . . . . . . .  3
+     1.2.  Insufficiency of Existing Approaches  . . . . . . . . . .  5
+     1.3.  The swarm_meta Mechanism  . . . . . . . . . . . . . . . .  7
+     1.4.  Relationship to AREF  . . . . . . . . . . . . . . . . . .  9
+     1.5.  Scope of This Document  . . . . . . . . . . . . . . . . . 10
+     1.6.  Requirements Language . . . . . . . . . . . . . . . . . . 11
+   2.  Terminology . . . . . . . . . . . . . . . . . . . . . . . . . 11
+   3.  The swarm_meta Object Schema  . . . . . . . . . . . . . . . . 12
+   4.  Embedding Rules . . . . . . . . . . . . . . . . . . . . . . . 15
+   5.  Orchestrator Processing Obligations . . . . . . . . . . . . . 16
+   6.  SDK Opt-Out Default . . . . . . . . . . . . . . . . . . . . . 17
+   7.  A2A Extension Registry Submission . . . . . . . . . . . . . . 18
+   8.  Security Considerations . . . . . . . . . . . . . . . . . . . 18
+   9.  IANA Considerations . . . . . . . . . . . . . . . . . . . . . 19
+   10. References  . . . . . . . . . . . . . . . . . . . . . . . . . 20
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . . 20
+
+
+1.  Introduction
+
+   The emergence of multi-agent systems -- architectures in which
+   software agents orchestrate, delegate to, and compose the outputs of
+   other agents -- has created a class of deployment scenarios for which
+   existing metadata and discovery conventions are insufficient.  Agents
+   in these systems interact programmatically, rarely involve human
+   intermediaries in individual request-response cycles, and are
+   increasingly expected to negotiate capability, pricing, and trust
+   without prior bilateral configuration.  swarm_meta is a protocol
+   designed to meet this class of requirements by embedding structured,
+   machine-readable metadata directly inside the payloads that agents
+   already exchange.
+
+   swarm_meta defines a JSON object that an agent MAY include in any
+   API response it produces.  The object carries fields that describe
+   the agent's identity, capabilities, marketplace location, referral
+   code, trust posture, and pricing model.  The mechanism requires no
+   separate discovery channel, no DNS-based service advertisement, and
+   no prior registration of the consuming orchestrator.  Any conformant
+   reader that encounters a swarm_meta block in a response payload is
+   able to act on its contents immediately.
+
+1.1.  Background and Motivation
+
+   The deployment of autonomous software agents via HTTP APIs is rapidly
+   expanding across commercial, research, and enterprise contexts.
+   Frameworks such as A2A, Model Context Protocol (MCP), and Agent
+   Communication Protocol (ACP) have established conventions for agent
+   capability declaration and inter-agent messaging.  Marketplace
+   platforms have emerged that index agents, expose their pricing, and
+   broker introductions between agent operators and developers.  Despite
+   this activity, no standardized mechanism exists for an agent to carry
+   its own discoverable economic and referral metadata within the
+   ordinary data channel it already uses to deliver responses.
+
+   This gap has a concrete consequence.  When a developer builds an
+   orchestration system that calls a third-party agent, the orchestrator
+   receives the agent's output but learns nothing about the agent's
+   marketplace identity, its affiliate tier, or the referral
+   attribution that should be recorded if the developer subsequently
+   registers with the same marketplace.  Attribution is therefore lost
+   unless the developer performs a manual, out-of-band lookup.  At
+   scale, across thousands of agent-to-agent calls, this loss of
+   attribution is systemic.
+
+   swarm_meta addresses this by treating the API response payload as
+   the propagation medium.  Because every agent call already produces a
+   response, the metadata channel is always available without additional
+   infrastructure.  The approach is analogous in principle to the
+   practice of embedding tracking attribution in referral URLs, but
+   operates at the data-layer level rather than the presentation layer,
+   making it invisible to end-users and directly readable by every agent
+   runtime or orchestrator that processes the response.
+
+   An additional motivation is the growth of affiliate and commission
+   structures within agent marketplaces.  As these structures mature,
+   they require a normative specification for how referral codes are
+   carried and how commission attribution is triggered.  swarm_meta
+   provides that specification for the propagation phase.  The vesting
+   phase is covered by AREF [AREF], as described in Section 1.4.
+
+1.2.  Insufficiency of Existing Approaches
+
+   Several existing specifications define mechanisms by which agents or
+   tools can publish metadata about themselves.  None of these
+   mechanisms satisfies the requirements that swarm_meta addresses.
+
+   A2A Agent Cards.  Agent cards as defined in the A2A specification
+   allow an agent to expose a structured JSON document at a well-known
+   endpoint.  Agent cards carry capability and authentication
+   information and are designed to be fetched by a caller before or
+   during session establishment.  They do not carry referral codes,
+   affiliate tiers, trust scores derived from marketplace reputation
+   systems, or pricing metadata.  Furthermore, the agent card model
+   requires the consuming party to initiate a separate HTTP request to
+   a known endpoint; the metadata does not travel inside the response
+   to an ordinary task request.  An orchestrator that calls an agent
+   without prior knowledge of its agent-card URL receives no
+   self-describing metadata from the agent at all.
+
+   OpenAI Plugin Manifests.  The OpenAI plugin manifest format provides
+   an ai-plugin.json document that describes a plugin's name,
+   description, authentication requirements, and API schema.  Like the
+   A2A agent card, the manifest is a separately fetched document.  It
+   contains no referral or economic metadata, and the specification does
+   not contemplate affiliate commission attribution.
+
+   Model Context Protocol (MCP).  MCP defines a mechanism by which
+   tools expose themselves to language model runtimes.  MCP tool
+   descriptions carry name, description, and input schema.  They do not
+   carry marketplace URLs, referral codes, pricing, trust scores, or
+   affiliate data.  MCP is designed for tool-to-runtime registration,
+   not for agent-to-agent economic coordination.
+
+   Agent Communication Protocol (ACP).  ACP defines an envelope for
+   inter-agent messaging and a discovery mechanism based on agent cards.
+   Its agent card format does not include economic or referral fields.
+
+   None of the above specifications was designed with affiliate
+   attribution or marketplace referral as a requirement.  None embeds
+   metadata in the response payload of a normal task call.  None
+   provides a normative definition of what fields must be present for a
+   referral to be considered machine-readable and attributable.
+   swarm_meta fills this gap.
+
+1.3.  The swarm_meta Mechanism
+
+   The swarm_meta propagation mechanism operates as follows.  An agent
+   registered with a SwarmSync-compatible marketplace is configured with
+   a swarm_meta block by its operator.  When the agent processes a
+   request and produces a response, the SDK wraps the response to
+   include the swarm_meta block as a top-level JSON field.  The calling
+   orchestrator receives the response and, if it is swarm_meta-aware,
+   reads the metadata block.  A developer operating or monitoring the
+   orchestrator encounters the marketplace URL and referral code carried
+   in the block.  If that developer subsequently registers their own
+   agent with the marketplace using the referral code, the referring
+   agent accrues a Scout-tier affiliate commission.  That commission
+   does not vest at the time the swarm_meta block is read, nor at the
+   time of the developer's registration.  Vesting occurs only upon an
+   escrow RELEASED event as defined in draft-stone-aref-00 [AREF],
+   preventing gaming of the attribution system.
+
+   The following text diagram represents the propagation flow:
+
+      Agent A (SwarmSync-registered) produces a task response
+        |
+        +--> Response payload includes top-level "swarm_meta" block
+               |
+               +--> Calling orchestrator reads "swarm_meta" block
+                      |
+                      +--> Developer observes marketplace_url and referral_code
+                             |
+                             +--> Developer registers new agent using referral_code
+                                    |
+                                    +--> Escrow binding created (per AREF)
+                                           |
+                                           +--> Escrow RELEASED event triggers
+                                                  |
+                                                  +--> Agent A earns Scout-tier
+                                                       affiliate commission
+
+   An example swarm_meta block is shown below:
+
+      {
+        "swarm_meta": {
+          "schema_version": "1.0",
+          "agent_id": "agent_abc123def456",
+          "agent_name": "Atlas Discovery Agent",
+          "marketplace_url": "https://swarmsync.ai/agents/agent_abc123def456",
+          "referral_code": "ATLAS-REF",
+          "capabilities": ["discovery", "orchestration", "structured_output"],
+          "trust_score": 94,
+          "pricing": {
+            "model": "per_task",
+            "base_price_usd": 0.5,
+            "accepts_crypto": true
+          },
+          "a2a_compatible": true,
+          "ap2_endpoint": "https://swarmsync-api-ry6c.onrender.com/ap2/negotiate",
+          "affiliate_tier": "Builder",
+          "last_active": "2026-03-08T14:22:00Z"
+        }
+      }
+
+   The swarm_meta block appears as a top-level field of the enclosing
+   JSON response object, regardless of the structure of the remainder of
+   the response.  A conformant reader MUST be capable of locating a
+   swarm_meta field at the top level of any JSON object response,
+   irrespective of what other fields are present.
+
+1.4.  Relationship to AREF
+
+   This document specifies the swarm_meta propagation protocol.  It
+   does not specify escrow binding, commission vesting, or financial
+   settlement.  Those functions are covered by the Agent Referral and
+   Escrow Framework, specified in draft-stone-aref-00 [AREF].
+
+   The relationship between the two specifications is as follows.
+   swarm_meta is the mechanism by which referral codes travel from a
+   referring agent to potential referral targets.  AREF is the mechanism
+   by which, once a referral code has been used in a registration event,
+   the resulting obligation is encoded as an escrow binding and the
+   commission is caused to vest upon a RELEASED event.  An
+   implementation MAY be conformant with this document -- that is, it
+   MAY correctly produce and consume swarm_meta blocks -- without
+   implementing AREF.  Conversely, an AREF implementation MUST have a
+   conformant mechanism for delivering referral codes to potential
+   registrants; swarm_meta is the normatively specified mechanism for
+   fulfilling that requirement.
+
+   Implementors building full-stack SwarmSync-compatible systems SHOULD
+   implement both specifications.  Implementors building only
+   orchestration or SDK tooling MAY implement swarm_meta alone.
+
+   This document normatively references draft-stone-aref-00 for the
+   definition of the escrow RELEASED event, the commission vesting
+   lifecycle, and the affiliate tier enumeration.  Where this document
+   and draft-stone-aref-00 conflict on a point within their overlapping
+   scope, draft-stone-aref-00 is authoritative with respect to
+   commission vesting and escrow behavior, and this document is
+   authoritative with respect to the structure and propagation of the
+   swarm_meta block.
+
+1.5.  Scope of This Document
+
+   This document specifies the following:
+
+   (a)  The normative JSON schema for the swarm_meta block, including
+        field names, types, constraints, and REQUIRED versus OPTIONAL
+        status for each field.
+
+   (b)  The rules governing embedding of a swarm_meta block in an API
+        response payload, including the requirement that the block appear
+        as a top-level field of the JSON response object and the
+        permitted response content-types.
+
+   (c)  The processing obligations of a conformant swarm_meta reader
+        (orchestrator or agent runtime), including the requirement to
+        treat an unrecognized schema_version as grounds for ignoring the
+        block, and the prohibition on blocking response processing on
+        the basis of a malformed swarm_meta block.
+
+   (d)  The opt-out default behavior for SDK implementors.  An SDK that
+        wraps agent responses MUST include the swarm_meta block by
+        default.  An agent operator MAY disable block injection by
+        setting the SWARMSYNC_DISABLE_META environment variable to the
+        string value "true".
+
+   (e)  The IANA registration considerations for the swarm_meta JSON
+        field name and schema_version string.
+
+   (f)  The path for submission of the swarm_meta schema as an
+        extension to the A2A extension registry at
+        github.com/a2aproject/A2A, as extensions/swarm-meta-v1.md.
+        This document is written to stand alone for that purpose; no
+        dependency on AREF is required for A2A extension conformance.
+
+   This document does not specify agent discovery, agent-to-agent
+   authentication, escrow mechanics, commission vesting, payment
+   processing, or any aspect of the marketplace business logic that lies
+   above the API response envelope layer.
+
+1.6.  Requirements Language
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all
+   capitals, as shown here.
+
+
+2.  Terminology
+
+   Agent:  An autonomous software process that accepts requests over an
+      HTTP API and produces responses.
+
+   Orchestrator:  A software system that calls one or more agents,
+      coordinates their outputs, and processes the responses it receives.
+
+   Marketplace:  A platform that indexes registered agents, manages
+      identity and reputation, and operates an affiliate commission
+      system.
+
+   Referrer:  An agent whose referral_code, when used by a new agent
+      operator during marketplace registration, entitles the Referrer
+      to a commission upon escrow settlement.
+
+   Referee:  An agent operator who registers with a marketplace using a
+      Referrer's referral_code.
+
+   swarm_meta block:  A JSON object conformant with the schema defined
+      in Section 3 of this document, embedded as a top-level field in
+      an agent API response.
+
+   swarm_meta-aware:  An orchestrator or agent runtime that is capable
+      of reading, parsing, and acting on a swarm_meta block in a
+      response payload.
+
+   Affiliate Tier:  A string enumeration value indicating the commission
+      rate applicable to a Referrer, as defined in draft-stone-aref-00
+      [AREF].  Valid values are Scout, Builder, Captain, and Architect.
+
+   Trust Score:  An integer in the range 0 to 100 representing the
+      agent's reputation within the marketplace, computed by the
+      SwarmScore system as defined in draft-stone-swarmscore-01.
+
+   AP2 Endpoint:  A URI at which the agent accepts negotiation requests
+      conformant with the AP2 protocol as defined in
+      draft-stone-vcap-ap2-00.
+
+
+3.  The swarm_meta Object Schema
+
+   A swarm_meta block is a JSON object.  When present in an API
+   response, it MUST appear as the value of a top-level field named
+   "swarm_meta" in the enclosing JSON response object.
+
+   The following fields are defined for the swarm_meta object.
+
+3.1.  schema_version (REQUIRED)
+
+   Type: string.
+
+   The version of the swarm_meta schema to which this block conforms.
+   The value MUST be a string of the form "MAJOR.MINOR" where MAJOR and
+   MINOR are non-negative integers.  This document defines schema
+   version "1.0".
+
+   A reader that encounters a schema_version with a MAJOR component
+   greater than any MAJOR component it supports MUST ignore the entire
+   swarm_meta block and MUST NOT treat the presence of an unrecognized
+   schema_version as an error.
+
+3.2.  agent_id (REQUIRED)
+
+   Type: string.
+
+   A stable, globally unique identifier for the agent within the
+   marketplace.  The format is implementation-defined by the marketplace
+   operator, but MUST be stable across the lifetime of the agent
+   registration and MUST NOT be reused after an agent is deregistered.
+
+3.3.  agent_name (REQUIRED)
+
+   Type: string.
+
+   A human-readable display name for the agent.  The value SHOULD be
+   fewer than 128 characters.  The value MAY be localized; if so, the
+   locale SHOULD be indicated by a companion agent_name_locale field.
+
+3.4.  marketplace_url (REQUIRED)
+
+   Type: string (URI).
+
+   An absolute URI at which the agent's marketplace listing can be
+   retrieved.  The URI MUST use the https scheme.
+
+3.5.  referral_code (REQUIRED)
+
+   Type: string.
+
+   An opaque string that the marketplace uses to attribute registration
+   events to this agent as Referrer.  The value is issued by the
+   marketplace and MUST be treated as opaque by readers.  The value
+   SHOULD be URL-safe (containing only characters from the set
+   [A-Za-z0-9-_]).
+
+3.6.  capabilities (REQUIRED)
+
+   Type: array of strings.
+
+   An array of strings describing the agent's functional capabilities.
+   Each element MUST be a non-empty string.  The vocabulary of
+   capability strings is not constrained by this specification; a
+   registry of RECOMMENDED capability strings is maintained by
+   SwarmSync.AI at the reference implementation repository.
+
+3.7.  trust_score (REQUIRED)
+
+   Type: integer.
+
+   An integer in the range 0 to 100 (inclusive) representing the
+   agent's current reputation score as computed by the SwarmScore
+   system.  A value of 0 indicates no established reputation.  A value
+   of 100 indicates the maximum reputation score.
+
+3.8.  pricing (REQUIRED)
+
+   Type: object.
+
+   An object describing the agent's pricing model.  The following
+   sub-fields are defined:
+
+   pricing.model (REQUIRED):  A string indicating the pricing model.
+      The following values are defined: "per_task", "per_token",
+      "per_minute", "subscription", "free".
+
+   pricing.base_price_usd (REQUIRED):  A non-negative number indicating
+      the base price in US dollars for one unit of the pricing model.
+      For model "free", the value MUST be 0.
+
+   pricing.accepts_crypto (REQUIRED):  A boolean indicating whether the
+      agent accepts payment via cryptographic payment channels in
+      addition to or instead of fiat payment.
+
+3.9.  a2a_compatible (REQUIRED)
+
+   Type: boolean.
+
+   A boolean indicating whether the agent supports interactions
+   conformant with the A2A agent protocol specification.
+
+3.10.  ap2_endpoint (OPTIONAL)
+
+   Type: string (URI).
+
+   A URI at which the agent accepts negotiation requests conformant
+   with the AP2 protocol.  The URI MUST use the https scheme.  This
+   field SHOULD be present if a2a_compatible is true and the agent
+   supports AP2.
+
+3.11.  affiliate_tier (REQUIRED)
+
+   Type: string.
+
+   The affiliate commission tier applicable to this agent as Referrer,
+   as defined in draft-stone-aref-00 [AREF].  The value MUST be one of
+   the following strings: "Scout", "Builder", "Captain", "Architect".
+
+3.12.  last_active (REQUIRED)
+
+   Type: string (ISO 8601 datetime).
+
+   An ISO 8601 formatted datetime string indicating when the agent was
+   last observed active in the marketplace.  The value SHOULD be in UTC
+   and SHOULD be expressed with second-level precision in the format
+   YYYY-MM-DDTHH:MM:SSZ.  An agent SDK that generates this value
+   automatically SHOULD set it to the current timestamp at response
+   generation time.
+
+
+4.  Embedding Rules
+
+4.1.  Placement
+
+   A swarm_meta block MUST appear as the value of a top-level field
+   named "swarm_meta" in the enclosing JSON response object.  It MUST
+   NOT be nested inside other fields.  It MUST NOT appear more than
+   once in a response.
+
+4.2.  Content-Type Requirements
+
+   A swarm_meta block MUST only be embedded in responses whose
+   Content-Type is "application/json" or a media type with a structured
+   syntax suffix of "+json" per [RFC6838].  A swarm_meta block MUST NOT
+   be embedded in responses with other Content-Types.
+
+4.3.  Response Compatibility
+
+   The presence of a swarm_meta block MUST NOT alter the semantic
+   content of the remainder of the response.  All fields other than
+   "swarm_meta" MUST have the same meaning they would have had in the
+   absence of the block.  A reader that does not recognize the
+   "swarm_meta" field MUST be able to ignore it without loss of
+   functionality.
+
+4.4.  Streaming Responses
+
+   When an agent produces a streaming response (e.g., server-sent
+   events or newline-delimited JSON), the swarm_meta block SHOULD be
+   included in the final chunk or event of the stream.  An agent that
+   cannot determine at stream initiation whether the stream will
+   complete successfully MAY omit the swarm_meta block from failed
+   streams.
+
+4.5.  Opt-Out
+
+   An agent operator MAY configure the agent SDK to omit the swarm_meta
+   block from all responses by setting the environment variable
+   SWARMSYNC_DISABLE_META to the string value "true" before the SDK is
+   initialized.  Any other value, including the absence of the variable,
+   MUST be interpreted as not opting out.
+
+
+5.  Orchestrator Processing Obligations
+
+5.1.  Block Detection
+
+   A swarm_meta-aware orchestrator MUST inspect the top-level fields of
+   every JSON response object it receives for the presence of a
+   "swarm_meta" field.  If the field is absent, the orchestrator MUST
+   treat the response as swarm_meta-absent and proceed without
+   swarm_meta processing.
+
+5.2.  Schema Version Check
+
+   Upon detecting a swarm_meta block, the orchestrator MUST read the
+   schema_version field.  If the MAJOR component of schema_version is
+   greater than the highest MAJOR version the orchestrator supports, the
+   orchestrator MUST ignore the block.  If the schema_version field is
+   absent or not a valid MAJOR.MINOR string, the orchestrator MUST
+   ignore the block.
+
+5.3.  Non-Blocking Processing
+
+   The orchestrator MUST NOT delay delivery of the response payload to
+   its own caller or consumers while processing a swarm_meta block.
+   swarm_meta processing MUST be performed asynchronously or after the
+   primary response has been forwarded.
+
+5.4.  Referral Code Handling
+
+   If the orchestrator supports referral attribution, it MAY extract the
+   referral_code from the swarm_meta block and use it during any
+   subsequent marketplace registration.  The orchestrator MUST NOT
+   transmit the referral_code to any party other than the marketplace
+   identified by the marketplace_url field in the same block.  The
+   orchestrator MUST NOT auto-submit a registration on behalf of the
+   developer without explicit developer authorization.
+
+5.5.  Trust Score Usage
+
+   The trust_score field is informational.  An orchestrator MAY use it
+   as one input to routing or selection logic.  The orchestrator MUST
+   NOT treat trust_score as an authoritative security assertion; it MUST
+   obtain a fresh score from the marketplace if security decisions depend
+   on reputation.
+
+5.6.  Malformed Block Handling
+
+   If the swarm_meta block is present but fails JSON parsing, contains
+   REQUIRED fields with invalid types, or is otherwise malformed, the
+   orchestrator MUST ignore the block and MUST NOT treat the malformed
+   block as an error that affects the primary response.
+
+
+6.  SDK Opt-Out Default
+
+   A SwarmSync-compatible SDK that wraps agent responses MUST include
+   the swarm_meta block in every response by default.  The SDK MUST
+   populate the block with data from the registered agent's marketplace
+   profile at the time of SDK initialization.
+
+   The SDK MUST honor the SWARMSYNC_DISABLE_META environment variable
+   as described in Section 4.5.  The check for this variable MUST be
+   performed at SDK initialization time and MUST NOT require a process
+   restart to take effect if the variable is set before the SDK is
+   loaded.
+
+   The following pseudocode represents the normative SDK wrapping
+   behavior:
+
+      function wrapWithSwarmMeta(response, agent):
+        if SWARMSYNC_DISABLE_META == "true":
+          return response
+        return merge(response, {
+          "swarm_meta": {
+            "schema_version": "1.0",
+            "agent_id": agent.id,
+            "agent_name": agent.name,
+            "marketplace_url": concat("https://swarmsync.ai/agents/", agent.id),
+            "referral_code": agent.referralCode,
+            "capabilities": agent.capabilities,
+            "trust_score": agent.trustScore,
+            "pricing": {
+              "model": agent.pricingModel,
+              "base_price_usd": agent.basePrice,
+              "accepts_crypto": agent.acceptsCrypto
+            },
+            "a2a_compatible": true,
+            "ap2_endpoint": agent.ap2Endpoint,
+            "affiliate_tier": agent.affiliateTier,
+            "last_active": currentTimestampISO8601()
+          }
+        })
+
+   The reference implementation of wrapWithSwarmMeta() is provided in
+   the SwarmSync SDK at packages/sdk/src/response-wrapper.ts.
+
+
+7.  A2A Extension Registry Submission
+
+   This document is designed to satisfy the requirements for submission
+   to the A2A extension registry at github.com/a2aproject/A2A as the
+   file extensions/swarm-meta-v1.md.
+
+   The extension is described as follows for registry purposes:
+
+      Extension name:     swarm_meta
+      Extension version:  1.0
+      Description:        A structured JSON block embedded in agent
+                          API response payloads, carrying marketplace
+                          identity, referral attribution, capabilities,
+                          trust score, and pricing metadata.
+      Specification:      draft-stone-swarm-meta-00
+      Reference impl:     https://github.com/bkauto3/SwarmSync
+      Maintainer:         Ben Stone <benstone@swarmsync.ai>
+      Conformance:        Any agent SDK or orchestrator that implements
+                          Sections 4, 5, and 6 of this document is
+                          conformant with this extension.
+      AREF dependency:    OPTIONAL.  swarm_meta conformance does not
+                          require implementation of draft-stone-aref-00.
+
+
+8.  Security Considerations
+
+   Referral Code Integrity:  The referral_code field in a swarm_meta
+   block is self-asserted by the agent.  A malicious agent MAY embed a
+   referral_code that does not belong to it.  An orchestrator MUST NOT
+   submit a referral_code to a marketplace without verifying, through
+   a marketplace API call, that the code is valid and corresponds to the
+   agent_id in the same block.
+
+   Metadata Tampering:  A swarm_meta block is not signed by this
+   specification.  A network intermediary with the ability to modify
+   response payloads MAY alter the contents of the block.  Operators
+   who require integrity guarantees for swarm_meta fields SHOULD use
+   TLS for all agent API communications and SHOULD verify agent identity
+   through ATEP [ATEP] before acting on swarm_meta content.
+
+   Trust Score Staleness:  The trust_score field reflects the agent's
+   reputation at the time the SDK populated the block.  It is not a
+   real-time assertion.  An orchestrator that makes security-relevant
+   decisions based on trust_score MUST obtain a fresh score from the
+   marketplace before acting.
+
+   Unauthorized Registration:  An orchestrator MUST obtain explicit
+   developer authorization before submitting a referral_code to a
+   marketplace for registration purposes.  Automatic registration
+   without authorization constitutes a privacy and security violation.
+
+   Data Minimization:  The swarm_meta block contains information that
+   identifies the agent and its commercial relationships.  An
+   orchestrator MUST NOT log, store, or forward swarm_meta block
+   contents to parties other than the marketplace identified by
+   marketplace_url without explicit operator authorization.
+
+   Opt-Out Enforcement:  SDK implementations MUST enforce the
+   SWARMSYNC_DISABLE_META opt-out faithfully and MUST NOT include a
+   swarm_meta block when opt-out has been configured, regardless of
+   other configuration.
+
+
+9.  IANA Considerations
+
+9.1.  JSON Field Name Registration
+
+   This document requests that IANA establish a registry titled
+   "swarm_meta JSON Field Names" for the top-level field names defined
+   in Section 3 of this document.  The registration policy for this
+   registry is Specification Required per [RFC8126].
+
+   Initial registrations:
+
+      Field name:      schema_version
+      Reference:       Section 3.1 of this document
+
+      Field name:      agent_id
+      Reference:       Section 3.2 of this document
+
+      Field name:      agent_name
+      Reference:       Section 3.3 of this document
+
+      Field name:      marketplace_url
+      Reference:       Section 3.4 of this document
+
+      Field name:      referral_code
+      Reference:       Section 3.5 of this document
+
+      Field name:      capabilities
+      Reference:       Section 3.6 of this document
+
+      Field name:      trust_score
+      Reference:       Section 3.7 of this document
+
+      Field name:      pricing
+      Reference:       Section 3.8 of this document
+
+      Field name:      a2a_compatible
+      Reference:       Section 3.9 of this document
+
+      Field name:      ap2_endpoint
+      Reference:       Section 3.10 of this document
+
+      Field name:      affiliate_tier
+      Reference:       Section 3.11 of this document
+
+      Field name:      last_active
+      Reference:       Section 3.12 of this document
+
+
+10.  References
+
+10.1.  Normative References
+
+   [RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate
+               Requirement Levels", BCP 14, RFC 2119,
+               DOI 10.17487/RFC2119, March 1997,
+               <https://www.rfc-editor.org/rfc/rfc2119>.
+
+   [RFC8174]   Leiba, B., "Ambiguity of Uppercase vs Lowercase in
+               RFC 2119 Key Words", BCP 14, RFC 8174,
+               DOI 10.17487/RFC8174, May 2017,
+               <https://www.rfc-editor.org/rfc/rfc8174>.
+
+   [RFC6838]   Freed, N., Klensin, J., and T. Hansen, "Media Type
+               Specifications and Registration Procedures", BCP 13,
+               RFC 6838, DOI 10.17487/RFC6838, January 2013,
+               <https://www.rfc-editor.org/rfc/rfc6838>.
+
+   [RFC8126]   Cotton, M., Leiba, B., and T. Narten, "Guidelines for
+               Writing an IANA Considerations Section in RFCs", BCP 26,
+               RFC 8126, DOI 10.17487/RFC8126, June 2017,
+               <https://www.rfc-editor.org/rfc/rfc8126>.
+
+   [AREF]      Stone, B., "Agent Referral and Escrow Framework",
+               draft-stone-aref-00, April 2026.
+
+10.2.  Informative References
+
+   [ATEP]      Stone, B., "Agent Trust and Execution Passport",
+               draft-stone-atep-01, April 2026.
+
+   [RFC9110]   Fielding, R., Nottingham, M., and J. Reschke,
+               "HTTP Semantics", STD 97, RFC 9110,
+               DOI 10.17487/RFC9110, June 2022,
+               <https://www.rfc-editor.org/rfc/rfc9110>.
+
+
+Author's Address
+
+   Ben Stone
+   SwarmSync.AI
+   Email: benstone@swarmsync.ai
+   URI:   https://swarmsync.ai

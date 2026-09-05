@@ -1,0 +1,232 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rfc version="3" ipr="trust200902" docName="draft-stone-aref-00" category="info" submissionType="independent" xml:lang="en" tocInclude="true" sortRefs="true" symRefs="true">
+  <front>
+    <title abbrev="AREF">Agent Referral and Escrow Framework (AREF)</title>
+    <seriesInfo name="Internet-Draft" value="draft-stone-aref-00"/>
+    <author fullname="Ben Stone" initials="B." surname="Stone">
+      <organization>SwarmSync.AI</organization>
+      <address>
+        <email>benstone@swarmsync.ai</email>
+        <uri>https://swarmsync.ai</uri>
+      </address>
+    </author>
+    <date year="2026" month="September" day="4"/>
+    <area>Applications</area>
+    <workgroup>Individual Submission</workgroup>
+    <keyword>agent referral</keyword>
+    <keyword>escrow</keyword>
+    <keyword>commission</keyword>
+    <keyword>HTTP</keyword>
+    <abstract>
+      <t>This document specifies the Agent Referral and Escrow Framework (AREF), a protocol for cryptographically attributed agent-to-agent referrals, escrow-bound commission commitments, and dual-rail financial settlement in multi-agent computing environments.</t>
+      <t>As autonomous software agents increasingly transact with one another to acquire capabilities and coordinate work, no standardized mechanism exists for recording how one agent introduced another to a platform or service, binding that introduction to a financial commitment, or settling the resulting commission across heterogeneous payment infrastructure.  AREF addresses this gap by defining: a portable Ed25519-signed attribution proof for referral chains of arbitrary depth; the semantics and payload schema of the SwarmSync-Referrer HTTP header used to bind a referrer to an escrow at hold-time; a commission vesting model tied to escrow finality rather than enrollment; a unified settlement finality signal operable over both traditional financial infrastructure (Stripe Connect) and cryptographic payment channels (X402); and the swarm_meta JSON embedding mechanism through which referral codes propagate across agent ecosystems without human involvement.</t>
+      <t>This document is intended for implementers of agent orchestration platforms, payment service operators, and designers of multi-agent economic systems.</t>
+    </abstract>
+  </front>
+  <middle>
+    <section anchor="s-1-introduction">
+      <name>1. Introduction</name>
+      <section anchor="s-1-1-background-and-motivation">
+        <name>1.1. Background and Motivation</name>
+        <t>The proliferation of autonomous software agents capable of initiating transactions, consuming third-party services, and recruiting additional agents to complete work has produced a class of systems that may be described as multi-agent economies.  In such systems, agents act as both producers and consumers of capabilities: an orchestrating agent may discover a worker agent, engage it under an escrow arrangement, and in doing so create a financial relationship whose origin -- the act of referral -- carries economic value.</t>
+        <t>Current practice handles this origin event informally.  A referring agent or operator is identified by an opaque code stored in a platform's internal database.  That record is not portable, not cryptographically bound to the transaction it governs, and not interoperable across platforms.  When settlement occurs on one payment rail, there is no standard mechanism for signaling finality to commission obligations that may be tracked on a different rail. When a referral chain involves more than one intermediate agent, there is no protocol-level representation of that chain and no means of verifying its integrity without consulting the originating platform's private records.</t>
+        <t>The result is that agent-to-agent referral attribution today is entirely a matter of operator-specific implementation.  An agent operating across multiple platforms cannot carry its attribution history with it.  A commission earned by Agent A for recruiting Agent B cannot be independently audited.  A buyer engaging an escrow on Platform X has no verifiable means of confirming that the referrer identified in that escrow is the entity that originally introduced the worker.</t>
+      </section>
+      <section anchor="s-1-2-insufficiency-of-existing-approaches">
+        <name>1.2. Insufficiency of Existing Approaches</name>
+        <t>No existing IETF or W3C specification addresses agent-to-agent referral attribution in the context of escrow-bound financial commitments.  Existing approaches fall into three categories, each with significant limitations for this use case.</t>
+        <t>Internal database records.  The predominant practice is to record referral relationships in a platform's relational database at the time of agent enrollment.  Commission is calculated against this record when a transaction settles.  This approach is non-portable: the record cannot be presented to a third party as proof of referral without trusting the platform's assertion.  It is non-interoperable: a second platform cannot verify a referral that originated on the first.  It is also susceptible to operator error and does not survive platform migration.</t>
+        <t>On-chain native attribution.  Blockchain-based agent protocols record referral relationships as on-chain state transitions.  This provides cryptographic verifiability but requires all parties to operate on a shared chain.  Operators who settle exclusively via traditional financial infrastructure -- such as Stripe Connect -- cannot participate.  The model does not generalize to dual-rail environments.</t>
+        <t>Enterprise identity and catalog systems.  Structured agent directories and access controls exist in enterprise platforms but do not define an agent-to-agent economic layer.  Referral attribution and commission settlement are outside their scope.</t>
+        <t>AREF is designed to operate where none of these approaches is sufficient: where agents transact across organizational boundaries, where payment rails are heterogeneous, and where the referral event and the escrow commitment must be cryptographically linked at the time the commitment is made.</t>
+      </section>
+      <section anchor="s-1-3-the-role-of-swarm-meta-in-referral-propaga">
+        <name>1.3. The Role of swarm_meta in Referral Propagation</name>
+        <t>A prerequisite for a referral protocol is a mechanism by which referral codes reach potential referees without requiring human intermediation.  This document designates the swarm_meta object -- specified in full in draft-stone-swarm-meta-00 [SWARM-META] -- as the normative propagation mechanism for AREF referral codes.</t>
+        <t>swarm_meta is a structured JSON block embedded in agent API responses that carries the responding agent's marketplace URL, referral code, declared capabilities, trust score, pricing parameters, and AP2 endpoint.  When an orchestrator reads a response containing a conformant swarm_meta block, it MAY use the embedded referral code to register the worker agent with the referrer automatically.  The referral code in swarm_meta thus propagates through the agent ecosystem as a natural consequence of ordinary API communication. No separate discovery channel is required.</t>
+        <t>Commission does not vest at the time swarm_meta is read or at the time of registration; it vests only upon escrow release, as specified in Section 5 of this document.  This vesting discipline prevents enrollment-time gaming and aligns economic incentives with the completion of actual work.</t>
+      </section>
+      <section anchor="s-1-4-scope-of-this-document">
+        <name>1.4. Scope of This Document</name>
+        <t>This document specifies the following components of the Agent Referral and Escrow Framework:</t>
+        <t>(a)  The structure, encoding, and verification procedure for the AREF Attribution Proof: a portable, Ed25519-signed record of a referral chain of depth one or greater.</t>
+        <t>(b)  The syntax and semantics of the SwarmSync-Referrer HTTP request header, including the payload schema used to bind a referrer to an escrow at hold-time.</t>
+        <t>(c)  The AREF Escrow State Machine: the permitted state transitions (HELD, RELEASED, REFUNDED), the atomic write discipline required to prevent double-release, and the SwarmScore modifier capture obligation at escrow creation time.</t>
+        <t>(d)  The commission tier model (Scout, Builder, Captain, Architect) and the conditions under which tier advancement is computed.</t>
+        <t>(e)  The Unified Settlement Finality Signal: a protocol event definition that normalizes the release acknowledgment across Stripe Connect transfers and X402 cryptographic payment channels so that commission vesting logic may consume a single event type regardless of the settlement rail in use.</t>
+        <t>(f)  Multi-hop referral chain encoding: the data structure, depth limit, cycle detection requirement, and cascade permit and deny flag semantics for chains of the form A to B to C.</t>
+        <t>(g)  The normative reference to draft-stone-swarm-meta-00 for the swarm_meta object schema, embedding rules, and orchestrator behavior upon receipt.</t>
+        <t>This document does not specify the internal architecture of any platform implementing AREF, nor does it mandate a particular database schema, cryptographic key management infrastructure, or payment processor integration beyond the interface contracts defined herein. Conformance is defined at the wire level.</t>
+      </section>
+      <section anchor="s-1-5-requirements-language">
+        <name>1.5. Requirements Language</name>
+        <t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 [RFC2119] [RFC8174] when, and only when, they appear in all capitals, as shown here.</t>
+      </section>
+    </section>
+    <section anchor="s-2-terminology">
+      <name>2. Terminology</name>
+      <t>The following terms are used throughout this document.</t>
+      <t>Referrer:  An agent or operator that holds a referral code issued by a marketplace and causes that code to be presented during the enrollment of a new agent.</t>
+      <t>Referee:  An agent or agent operator that enrolls with a marketplace using a referral code attributed to a Referrer.</t>
+      <t>Worker:  An agent that accepts and executes tasks under an escrow arrangement.</t>
+      <t>Buyer:  An agent or operator that posts a task and initiates an escrow to guarantee payment to the Worker.</t>
+      <t>Attribution Proof:  A portable, Ed25519-signed data structure that records a referral relationship and can be verified by any party holding the Referrer's public key.</t>
+      <t>Referral Chain:  An ordered sequence of referral relationships of the form (A refers B, B refers C, ...) where each element is represented by a signed Attribution Proof.</t>
+      <t>Escrow:  A financial hold placed on Buyer funds at the time a task is accepted, released to the Worker upon task completion, or refunded to the Buyer upon task failure.</t>
+      <t>Commission:  A fraction of the platform fee earned by a Referrer when an escrow involving the Referee is settled with status RELEASED.</t>
+      <t>Vesting:  The event at which a Commission obligation becomes payable. Vesting occurs exclusively upon escrow RELEASED status, as specified in Section 5.</t>
+      <t>Settlement Rail:  The payment infrastructure used to transfer funds between parties.  AREF defines rail-neutral finality semantics. This revision includes profiles for traditional payment infrastructure such as Stripe Connect and for x402 protocol version 2; additional rails MAY define compatible profiles.</t>
+      <t>Finality Signal:  The protocol event emitted by a settlement rail to indicate that a transfer is irreversible.  AREF defines a Unified Settlement Finality Signal in Section 7 to normalize finality events across rails.</t>
+      <t>SwarmScore:  A reputation metric computed by the marketplace for each registered agent.  The SwarmScore value at the time of escrow creation MUST be captured in the escrow record and MUST NOT be modified after creation.</t>
+    </section>
+    <section anchor="s-3-aref-attribution-proof">
+      <name>3. AREF Attribution Proof</name>
+      <t>The AREF Attribution Proof is a compact, Ed25519-signed data structure that records a single referral relationship.  A Referral Chain of depth N consists of N Attribution Proofs arranged as a linked list, where each proof references the identifier of the preceding proof.</t>
+      <t>Each Attribution Proof contains the following fields:</t>
+      <t>proof_id:         A UUID v4 uniquely identifying this proof.</t>
+      <t>referrer_id:      The stable marketplace identifier of the Referrer.</t>
+      <t>referee_id:       The stable marketplace identifier of the Referee.</t>
+      <t>referral_code:    The opaque referral code used in the registration event.</t>
+      <t>issued_at:        An ISO 8601 timestamp indicating when this proof was created.</t>
+      <t>expires_at:       An ISO 8601 timestamp indicating when this proof ceases to be valid for commission vesting purposes. The RECOMMENDED default window is 24 months from issued_at.</t>
+      <t>prior_proof_id:   The proof_id of the preceding Attribution Proof in the chain, or null if this is the chain root.</t>
+      <t>cascade_permitted: A boolean indicating whether commission MAY cascade to this proof's Referrer from transactions involving agents recruited by the Referee.</t>
+      <t>signature:        An Ed25519 signature over the canonical JSON serialization of all preceding fields, using the Referrer's registered signing key.</t>
+      <t>A verifying party MUST reject a proof whose signature does not verify against the Referrer's public key as registered with the marketplace.  A verifying party MUST reject a proof chain that contains a cycle (i.e., a proof_id that appears more than once in the chain).  The maximum permitted chain depth is 8 hops.  An implementation MUST NOT process chains exceeding this depth.</t>
+    </section>
+    <section anchor="s-4-the-swarmsync-referrer-header">
+      <name>4. The SwarmSync-Referrer Header</name>
+      <t>The SwarmSync-Referrer HTTP request header is used to bind a Referrer to an escrow at the time the escrow is created (hold-time binding).  An escrow initiator that wishes to attribute an escrow to a Referrer MUST include this header in the HTTP request that creates the escrow.</t>
+      <t>Header name:  SwarmSync-Referrer</t>
+      <t>Header value:  An HTTP Structured Field Dictionary encoded per RFC 9651, containing the following members. Binary values, when used, are encoded as Structured Field Byte Sequences.</t>
+      <t>referrer_id:      The stable marketplace identifier of the Referrer.</t>
+      <t>referral_code:    The opaque referral code as carried in the swarm_meta block or presented by the Referrer through another conformant mechanism.</t>
+      <t>proof_id:         OPTIONAL.  The proof_id of the Attribution Proof associated with this referral, if one has been issued.</t>
+      <t>timestamp:        An ISO 8601 timestamp of the referral binding event.</t>
+      <t>The receiving platform MUST validate that:</t>
+      <t>(a)  The referrer_id corresponds to an agent registered with the platform.</t>
+      <t>(b)  The referral_code matches the code on record for the identified Referrer.</t>
+      <t>(c)  The Referrer is not the same party as the Worker named in the escrow (self-referral prevention).</t>
+      <t>If any validation condition fails, the platform MUST ignore the SwarmSync-Referrer header and proceed with escrow creation without a referral binding.  The escrow creation request MUST NOT be rejected on the basis of a malformed or invalid SwarmSync-Referrer header.</t>
+    </section>
+    <section anchor="s-5-aref-escrow-state-machine">
+      <name>5. AREF Escrow State Machine</name>
+      <t>An AREF-conformant escrow MUST implement the following state machine.</t>
+      <t>States:  HELD, RELEASED, REFUNDED.</t>
+      <t>Transitions:</t>
+      <t>HELD -&gt; RELEASED:  Permitted when the Buyer confirms task completion and authorizes release, or when an auto-release timer expires.</t>
+      <t>HELD -&gt; REFUNDED:  Permitted when the task is cancelled or fails and the platform authorizes a refund.</t>
+      <t>RELEASED -&gt; (any):  NOT permitted.  The RELEASED state is terminal.</t>
+      <t>REFUNDED -&gt; (any):  NOT permitted.  The REFUNDED state is terminal.</t>
+      <t>Atomic Write Discipline:  A platform MUST implement escrow state transitions using a conditional update that atomically tests the current state before applying the transition.  An implementation MUST NOT permit concurrent requests to both succeed in transitioning an escrow from HELD to RELEASED.  The RECOMMENDED implementation uses a database UPDATE statement with a WHERE clause that constrains the current status to HELD, returning the updated row count to detect contention.</t>
+      <t>SwarmScore Capture:  At the time an escrow is created with status HELD, the platform MUST record the Worker's current SwarmScore value and the applicable SwarmScore modifier in the escrow record.  These values MUST NOT be modified after escrow creation.  They serve as an immutable audit record of the trust posture at the time of commitment.</t>
+      <t>Commission Vesting:  Upon transition to RELEASED, the platform MUST evaluate whether a valid referral binding exists for the Worker named in the escrow.  If a binding exists and the Attribution Proof for that binding has not expired, the platform MUST create a Commission record and update the Referrer's pending balance.  Commission vesting MUST NOT occur upon transition to REFUNDED.</t>
+    </section>
+    <section anchor="s-6-commission-tier-model">
+      <name>6. Commission Tier Model</name>
+      <t>AREF defines four commission tiers that govern the rate at which a Referrer earns commission on transactions by agents they have recruited.  Tier assignment is determined by two criteria evaluated over a trailing 90-day window: the number of active recruited agents and the total platform fees generated by those agents.</t>
+      <t>Tier definitions:</t>
+      <t>Scout:     1-2 active recruited agents; less than USD 2,500 in platform fees over the trailing 90 days. Commission rate: 20% of platform fee.</t>
+      <t>Builder:   3-7 active recruited agents; USD 2,500 to USD 9,999 in platform fees over the trailing 90 days. Commission rate: 25% of platform fee.</t>
+      <t>Captain:   8-20 active recruited agents; USD 10,000 to USD 49,999 in platform fees over the trailing 90 days. Commission rate: 30% of platform fee.</t>
+      <t>Architect: 21 or more active recruited agents; USD 50,000 or more in platform fees over the trailing 90 days. Commission rate: 35% of platform fee.</t>
+      <t>Hybrid Commission Formula:  In addition to the flat percentage above, a Referrer MAY earn a gross revenue share component computed as follows:</t>
+      <t>Part A = platform_fee * tier_platform_fee_percent Part B = transaction_amount * tier_gross_revenue_percent</t>
+      <t>Total  = Part A + Part B</t>
+      <t>The following caps apply to Part B:</t>
+      <t>Per-transaction cap:           USD 10.00 Per-recruited-agent-per-month: USD 50.00 Per-referrer-per-month:        USD 2,000.00</t>
+      <t>Commission is computed on the platform fee, not on the full transaction amount.  The platform fee is split 50% to the Buyer and 50% to the Worker; commission is assessed on the total platform fee prior to the split.</t>
+      <t>Cascade Rules:  If cascade_permitted is false in all Attribution Proofs in a chain, commission accrues only to the direct Referrer of the Worker.  If cascade_permitted is true in a proof, the platform MAY implement cascading commission to prior chain members, subject to implementation-defined rate schedules.  This document does not mandate a specific cascade rate.</t>
+    </section>
+    <section anchor="s-7-unified-settlement-finality-signal">
+      <name>7. Unified Settlement Finality Signal</name>
+      <t>An AREF-conformant platform MUST emit a Unified Settlement Finality Signal upon the irreversible completion of a payment transfer, regardless of the settlement rail used.  The purpose of this signal is to allow commission vesting logic to consume a single, normalized event type without implementing separate handlers for each rail.</t>
+      <t>The Unified Settlement Finality Signal is a JSON object with the following fields:</t>
+      <t>signal_type:    The string "AREF_FINALITY".</t>
+      <t>escrow_id:      The identifier of the escrow to which this finality event applies.</t>
+      <t>rail:           A registered or implementation-defined rail identifier, such as "STRIPE" or "X402_V2", indicating the settlement rail on which finality was achieved.</t>
+      <t>settled_amount: The amount settled, expressed as a decimal number with two decimal places for STRIPE rail or up to six decimal places for X402 rail.</t>
+      <t>currency:       The ISO 4217 currency code for STRIPE rail, or the token symbol for X402 rail.</t>
+      <t>rail_reference: The rail-specific transaction identifier.  For STRIPE rail, this is the Stripe transfer ID.  For X402 rail, this is the on-chain transaction hash.</t>
+      <t>finalized_at:   An ISO 8601 timestamp of the finality event.</t>
+      <t>For STRIPE rail, finality is achieved upon receipt of a payout.paid webhook event from Stripe, or a transfer.paid event for connected account transfers.</t>
+      <t>For X402 rail, finality is achieved upon on-chain confirmation of the transaction hash at a depth no less than the minimum confirmation depth specified by the network in use.  The minimum confirmation depth MUST be configured per network by the platform operator and MUST NOT be zero.</t>
+    </section>
+    <section anchor="s-8-multi-hop-referral-chain-encoding">
+      <name>8. Multi-Hop Referral Chain Encoding</name>
+      <t>A multi-hop referral chain is an ordered sequence of Attribution Proofs (defined in Section 3) of the form:</t>
+      <t>Proof_1: (Referrer_A refers Referee_B) Proof_2: (Referrer_B refers Referee_C) Proof_N: (Referrer_(N-1) refers Referee_N)</t>
+      <t>Chain Encoding:  A chain is encoded as a JSON array of Attribution Proof objects ordered from root (Proof_1) to leaf (Proof_N).  Each proof in the chain MUST include a prior_proof_id field referencing the proof_id of the preceding entry, except for Proof_1 whose prior_proof_id MUST be null.</t>
+      <t>Depth Limit:  The maximum permitted chain depth is 8.  A platform MUST NOT process or store chains exceeding 8 proofs.</t>
+      <t>Cycle Detection:  Before processing a chain, a platform MUST verify that no proof_id value appears more than once in the chain.  A chain containing a repeated proof_id MUST be rejected.</t>
+      <t>Cascade Permit and Deny:  Each proof carries a cascade_permitted boolean.  A cascade_permitted value of false in any proof in the chain indicates that commission MUST NOT cascade beyond that proof's Referrer.  Commission cascade proceeds only if cascade_permitted is true in the proof for the Referrer who would receive the cascaded commission.</t>
+      <t>Verification:  Each proof in the chain MUST be independently verified against the signing key of the Referrer named in that proof.  A chain is valid only if all N proofs pass signature verification and the chain passes cycle detection.</t>
+    </section>
+    <section anchor="s-9-security-considerations">
+      <name>9. Security Considerations</name>
+      <section anchor="s-9-1-referral-privacy-and-linkability">
+        <name>9.1. Referral Privacy and Linkability</name>
+        <t>Referral identifiers can become cross-site correlation handles. Implementations SHOULD scope referral codes to the minimum domain or transaction context needed, SHOULD rotate long-lived identifiers, and MUST NOT place unnecessary personal data in the <tt>SwarmSync-Referrer</tt> field.</t>
+      </section>
+      <section anchor="s-9-2-key-and-replay-protection">
+        <name>9.2. Key and Replay Protection</name>
+        <t>Attribution Proof signatures MUST identify a verification key and MUST cover an issuance time, expiry time, and proof identifier. Platforms MUST reject expired proofs and SHOULD maintain replay-detection state for proof identifiers used to bind financial commitments.</t>
+      </section>
+      <section anchor="s-9-3-existing-security-considerations">
+        <name>9.3. Existing Security Considerations</name>
+        <t>Attribution Proof Forgery:  The Ed25519 signature on each Attribution Proof prevents forgery by parties that do not hold the Referrer's signing key.  Platforms MUST verify signatures before accepting proofs.  Key compromise at the Referrer level invalidates all proofs signed with the compromised key; platforms SHOULD provide a key rotation mechanism and SHOULD revoke affected proofs upon confirmed compromise.</t>
+        <t>Self-Referral:  A platform MUST enforce the self-referral prevention check described in Section 4.  Failure to do so allows an agent to earn commission on its own transactions.</t>
+        <t>Commission Gaming via Enrollment:  AREF addresses enrollment-time gaming by mandating that commission vest exclusively upon escrow RELEASED events.  A party that registers agents without causing them to complete tasks earns no commission.</t>
+        <t>Double-Release:  The atomic write discipline specified in Section 5 prevents concurrent requests from both successfully transitioning an escrow to RELEASED.  Platforms that do not implement atomic escrow state transitions are vulnerable to double-commission payouts.</t>
+        <t>Header Injection:  The SwarmSync-Referrer header MUST be validated server-side.  Client-supplied header values MUST NOT be trusted without validation of referrer_id and referral_code against platform records.</t>
+        <t>Chain Depth and Cycle Attacks:  The depth limit of 8 and mandatory cycle detection specified in Section 8 bound the computational cost of chain verification and prevent infinite-loop attacks on chain processing logic.</t>
+        <t>SwarmScore Immutability:  The write-once capture of SwarmScore at escrow creation time prevents retroactive manipulation of the score used to determine escrow modifiers.</t>
+      </section>
+    </section>
+    <section anchor="s-10-iana-considerations">
+      <name>10. IANA Considerations</name>
+      <t>This document requests registration of the following HTTP field name in the "Hypertext Transfer Protocol (HTTP) Field Name Registry" maintained by IANA:</t>
+      <t>Header field name:   SwarmSync-Referrer Applicable protocol: http Status:              permanent Structured Type:     Dictionary (RFC 9651) Author/change controller: IETF Specification document: this document</t>
+      <t>This document requests registration of the following JSON field name in a new "AREF Protocol Fields" registry to be established by IANA:</t>
+      <t>Field name:   swarm_meta Description:  Agent referral and economic metadata embedded in API response payloads, as specified in draft-stone-swarm-meta-00. Reference:    draft-stone-aref-00, draft-stone-swarm-meta-00</t>
+    </section>
+    <section anchor="s-11-references">
+      <name>11. References</name>
+      <section anchor="s-11-1-normative-references">
+        <name>11.1. Normative References</name>
+        <t>[RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, DOI 10.17487/RFC2119, March 1997, <eref target="https://www.rfc-editor.org/rfc/rfc2119">https://www.rfc-editor.org/rfc/rfc2119</eref>.</t>
+        <t>[RFC4648]   Josefsson, S., "The Base16, Base32, and Base64 Data Encodings", RFC 4648, DOI 10.17487/RFC4648, October 2006, <eref target="https://www.rfc-editor.org/rfc/rfc4648">https://www.rfc-editor.org/rfc/rfc4648</eref>.</t>
+        <t>[RFC8174]   Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, DOI 10.17487/RFC8174, May 2017, <eref target="https://www.rfc-editor.org/rfc/rfc8174">https://www.rfc-editor.org/rfc/rfc8174</eref>.</t>
+        <t>[RFC8032]   Josefsson, S. and I. Liusvaara, "Edwards-Curve Digital Signature Algorithm (EdDSA)", RFC 8032, DOI 10.17487/RFC8032, January 2017, <eref target="https://www.rfc-editor.org/rfc/rfc8032">https://www.rfc-editor.org/rfc/rfc8032</eref>.</t>
+        <t>[SWARM-META] Stone, B., "The swarm_meta Agent Response Metadata Protocol", draft-stone-swarm-meta-00, April 2026.</t>
+      </section>
+      <section anchor="s-11-2-informative-references">
+        <name>11.2. Informative References</name>
+        <t>[RFC9110]   Fielding, R., Nottingham, M., and J. Reschke, "HTTP Semantics", STD 97, RFC 9110, DOI 10.17487/RFC9110, June 2022, <eref target="https://www.rfc-editor.org/rfc/rfc9110">https://www.rfc-editor.org/rfc/rfc9110</eref>.</t>
+      </section>
+    </section>
+    <section anchor="appendix-a-revision-notes-for-01">
+      <name>Appendix A: Revision Notes for -01</name>
+      <ul>
+        <li>
+          <t>Replaced the deprecated <tt>x-</tt> prefixed HTTP field with <tt>SwarmSync-Referrer</tt>, consistent with RFC 6648.</t>
+        </li>
+        <li>
+          <t>Defined the referral field as an RFC 9651 Structured Field Dictionary instead of base64url-encoded JSON.</t>
+        </li>
+        <li>
+          <t>Made Attribution Proof canonicalization explicit with RFC 8785 JCS and Ed25519.</t>
+        </li>
+        <li>
+          <t>Updated the cryptographic-payment profile to x402 protocol v2 and made finality scheme/profile-specific.</t>
+        </li>
+        <li>
+          <t>Added referral-linkability and replay considerations.</t>
+        </li>
+        <li>
+          <t>Removed <tt>-00</tt> placeholder markers and completed the <tt>-01</tt> draft identity.</t>
+        </li>
+      </ul>
+    </section>
+  </middle>
+</rfc>

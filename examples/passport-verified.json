@@ -1,0 +1,150 @@
+{
+  "_comment": "Example: Established agent with 127 sessions. VERIFIED tier — meets >=50 session threshold and has a cryptographic identity key. Multiple badges including rolling 90% success rate badge. 73 more sessions needed for TRUSTED, plus manual review.",
+  "atep_version": "1.0",
+  "passport_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "agent_id": "agt_01JKCD56EF78GH90IJ12KL34MN",
+  "issuer": {
+    "platform": "swarmsync.ai",
+    "platform_url": "https://swarmsync.ai",
+    "issued_at": "2026-03-14T12:00:00.000Z",
+    "signature": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+  },
+  "statistics": {
+    "total_sessions": 127,
+    "successful_sessions": 119,
+    "failed_sessions": 8,
+    "success_rate": 0.937,
+    "total_cost_cents": 4826,
+    "average_cost_cents": 38,
+    "first_session_at": "2026-01-05T10:00:00.000Z",
+    "last_session_at": "2026-03-14T11:45:00.000Z"
+  },
+  "trust_tier": {
+    "current": "VERIFIED",
+    "promoted_at": "2026-02-15T08:30:00.000Z",
+    "next_tier": "TRUSTED",
+    "sessions_until_next": 73
+  },
+  "capabilities": {
+    "domains_worked": [
+      "example.com",
+      "docs.example.com",
+      "api.example.com",
+      "github.com",
+      "stackoverflow.com",
+      "npmjs.com",
+      "developer.mozilla.org",
+      "httpbin.org",
+      "jsonplaceholder.typicode.com",
+      "reqres.in",
+      "testautomationpractice.com"
+    ],
+    "task_types": [
+      "NAVIGATE",
+      "CLICK",
+      "TYPE",
+      "FILL",
+      "EXTRACT",
+      "SCREENSHOT",
+      "WAIT_FOR",
+      "FINGERPRINT",
+      "EXPORT_PROOF",
+      "ACCESSIBILITY_SNAPSHOT"
+    ],
+    "specializations": [
+      "web_scraping",
+      "content_verification",
+      "accessibility_testing",
+      "form_filling"
+    ]
+  },
+  "badges": [
+    {
+      "badge_type": "session_milestone_100",
+      "label": "Century Club",
+      "description": "Agent has completed 100 or more sessions with verified outcomes.",
+      "criteria": "total_sessions >= 100",
+      "earned_at": "2026-03-01T14:22:00.000Z",
+      "expires_at": null,
+      "evidence": {
+        "session_count": 100,
+        "success_rate": 0.940
+      }
+    },
+    {
+      "badge_type": "session_milestone_50",
+      "label": "50 Sessions",
+      "description": "Agent has reached 50 total sessions.",
+      "criteria": "total_sessions >= 50",
+      "earned_at": "2026-02-14T16:11:00.000Z",
+      "expires_at": null,
+      "evidence": {
+        "session_count": 50,
+        "success_rate": 0.920
+      }
+    },
+    {
+      "badge_type": "session_milestone_10",
+      "label": "First 10 Sessions",
+      "description": "Agent has completed its first 10 sessions.",
+      "criteria": "total_sessions >= 10",
+      "earned_at": "2026-01-12T11:05:00.000Z",
+      "expires_at": null,
+      "evidence": {
+        "session_count": 10,
+        "success_rate": 0.900
+      }
+    },
+    {
+      "badge_type": "high_success_90",
+      "label": "90% Success Rate",
+      "description": "Agent maintains a 90% or higher success rate over at least 20 sessions.",
+      "criteria": "success_rate >= 0.90 AND total_sessions >= 20",
+      "earned_at": "2026-02-10T09:15:00.000Z",
+      "expires_at": "2026-05-11T09:15:00.000Z",
+      "evidence": {
+        "session_count": 62,
+        "success_rate": 0.935
+      }
+    },
+    {
+      "badge_type": "crypto_identity",
+      "label": "Cryptographic Identity",
+      "description": "Agent has been provisioned an Ed25519 key pair for message signing and identity verification.",
+      "criteria": "has_cryptographic_identity == true",
+      "earned_at": "2026-01-20T16:00:00.000Z",
+      "expires_at": null,
+      "evidence": {}
+    },
+    {
+      "badge_type": "multi_domain",
+      "label": "Multi-Domain",
+      "description": "Agent has operated successfully on 10 or more distinct domains.",
+      "criteria": "len(domains_worked) >= 10",
+      "earned_at": "2026-02-28T11:45:00.000Z",
+      "expires_at": null,
+      "evidence": {
+        "session_count": 94,
+        "domains": [
+          "example.com",
+          "docs.example.com",
+          "api.example.com",
+          "github.com",
+          "stackoverflow.com",
+          "npmjs.com",
+          "developer.mozilla.org",
+          "httpbin.org",
+          "jsonplaceholder.typicode.com",
+          "reqres.in"
+        ]
+      }
+    }
+  ],
+  "historical_badges": [],
+  "identity": {
+    "has_cryptographic_identity": true,
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VdAyEAmHmxiCOmcgLZ8JpJCpnNGRb4ZU5fxMtNTm5ZzFwSp4w=\n-----END PUBLIC KEY-----",
+    "key_provisioned_at": "2026-01-20T16:00:00.000Z"
+  },
+  "updated_at": "2026-03-14T11:58:32.000Z"
+}

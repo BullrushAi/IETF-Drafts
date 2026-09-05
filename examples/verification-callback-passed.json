@@ -1,0 +1,58 @@
+{
+  "vcap_version": "1.0",
+  "message_type": "verification_callback",
+  "verification_id": "c9f4a2e7-1b53-4d80-a6c1-3f0e8b5d2a97",
+  "passed": true,
+  "proof_hash": "6d633b09abe39de1a4121dd3a1df17cfe5e2c53083632e67f77259a94ca52490",
+  "proof_signature": "e9cc1b05f2e00ff0bf7be5925973613f0af89d5965232483cecb45eb0cf3ed59",
+  "extracted_content": "[{\"product_name\":\"Widget Pro\",\"price\":29.99},{\"product_name\":\"Gadget Lite\",\"price\":9.99},{\"product_name\":\"Deluxe Pack\",\"price\":49.99}]",
+  "action_log": [
+    {
+      "index": 0,
+      "action": "NAVIGATE",
+      "url": "https://demo.example.com/results/task-a3f8e1c2",
+      "success": true,
+      "cost_cents": 1,
+      "duration_ms": 842,
+      "timestamp": "2026-03-15T09:43:29Z"
+    },
+    {
+      "index": 1,
+      "action": "WAIT_FOR",
+      "selector": ".product-list-json",
+      "success": true,
+      "cost_cents": 0,
+      "duration_ms": 213,
+      "timestamp": "2026-03-15T09:43:30Z"
+    },
+    {
+      "index": 2,
+      "action": "EXTRACT",
+      "selector": ".product-list-json",
+      "success": true,
+      "cost_cents": 2,
+      "duration_ms": 108,
+      "timestamp": "2026-03-15T09:43:30Z",
+      "data_snippet": "[{\"product_name\":\"Widget Pro\",\"price\":29.99},{\"product_name\":\"Gadget Lite\",\"price\":9.99}]"
+    },
+    {
+      "index": 3,
+      "action": "FINGERPRINT",
+      "url": "https://demo.example.com/results/task-a3f8e1c2",
+      "success": true,
+      "cost_cents": 1,
+      "duration_ms": 95,
+      "timestamp": "2026-03-15T09:43:31Z",
+      "data_snippet": "sha256:6d633b09abe39de1a4121dd3a1df17cfe5e2c53083632e67f77259a94ca52490"
+    },
+    {
+      "index": 4,
+      "action": "EXPORT_PROOF",
+      "success": true,
+      "cost_cents": 0,
+      "duration_ms": 34,
+      "timestamp": "2026-03-15T09:43:31Z"
+    }
+  ],
+  "completed_at": "2026-03-15T09:43:31Z"
+}

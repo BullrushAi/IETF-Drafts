@@ -1,0 +1,279 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://aivs.dev/schemas/v1/proof-bundle-manifest.schema.json",
+  "title": "AIVS Proof Bundle Structure",
+  "description": "Describes the structure of an AIVS Full Bundle: a gzip-compressed tar archive (.tar.gz) whose filename follows the convention 'aivs_proof_{session_id[0:8]}_{unix_timestamp}.tar.gz'. The archive contains a single top-level directory 'session_proof/' with five required files and optional extension files. See AIVS v1.0 Section 6.",
+  "type": "object",
+  "required": [
+    "archive_filename",
+    "top_level_directory",
+    "required_files",
+    "aivs_version"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "archive_filename": {
+      "type": "string",
+      "pattern": "^aivs_proof_[A-Za-z0-9_-]{1,8}_[0-9]+\\.tar\\.gz$",
+      "description": "Filename of the .tar.gz bundle. Convention: aivs_proof_{session_id[0:8]}_{int(unix_timestamp)}.tar.gz",
+      "examples": ["aivs_proof_sess-d4e_1742000421.tar.gz"]
+    },
+    "top_level_directory": {
+      "type": "string",
+      "const": "session_proof/",
+      "description": "All files in the archive are under this single top-level directory."
+    },
+    "aivs_version": {
+      "type": "string",
+      "description": "AIVS specification version this bundle was produced under.",
+      "examples": ["1.0"]
+    },
+    "required_files": {
+      "type": "object",
+      "description": "The five required files that every AIVS Full Bundle must contain.",
+      "required": [
+        "audit_log_jsonl",
+        "manifest_json",
+        "session_sig_txt",
+        "public_key_pem",
+        "verify_py"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "audit_log_jsonl": {
+          "type": "object",
+          "description": "session_proof/audit_log.jsonl — Hash-chained action log in newline-delimited JSON format.",
+          "required": ["path", "format", "schema_ref", "ordering"],
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "const": "session_proof/audit_log.jsonl",
+              "description": "Archive-relative path to the file."
+            },
+            "format": {
+              "type": "string",
+              "const": "JSONL",
+              "description": "Newline-delimited JSON. Each line is a valid JSON object conforming to the audit-log-entry schema."
+            },
+            "schema_ref": {
+              "type": "string",
+              "const": "https://aivs.dev/schemas/v1/audit-log-entry.schema.json",
+              "description": "JSON Schema that each line must conform to."
+            },
+            "ordering": {
+              "type": "string",
+              "const": "ascending by id",
+              "description": "Rows MUST appear in ascending order by the 'id' field."
+            }
+          }
+        },
+        "manifest_json": {
+          "type": "object",
+          "description": "session_proof/manifest.json — Bundle metadata including the chain hash. Conforms to the manifest schema.",
+          "required": ["path", "format", "schema_ref"],
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "const": "session_proof/manifest.json",
+              "description": "Archive-relative path to the file."
+            },
+            "format": {
+              "type": "string",
+              "const": "JSON",
+              "description": "Plain JSON object."
+            },
+            "schema_ref": {
+              "type": "string",
+              "const": "https://aivs.dev/schemas/v1/manifest.schema.json",
+              "description": "JSON Schema this file must conform to."
+            }
+          }
+        },
+        "session_sig_txt": {
+          "type": "object",
+          "description": "session_proof/session_sig.txt — The chain hash and optional Ed25519 signature over that hash.",
+          "required": ["path", "format", "fields"],
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "const": "session_proof/session_sig.txt",
+              "description": "Archive-relative path to the file."
+            },
+            "format": {
+              "type": "string",
+              "const": "plain text, two lines",
+              "description": "Line 1: 'chain_hash:{64-char-hex}'. Line 2: either 'signature:{base64}' or '# Ed25519 signing not available'."
+            },
+            "fields": {
+              "type": "object",
+              "description": "The two fields present in this file.",
+              "required": ["chain_hash_line", "signature_line"],
+              "additionalProperties": false,
+              "properties": {
+                "chain_hash_line": {
+                  "type": "string",
+                  "description": "Format: 'chain_hash:{64-char-lowercase-hex-sha256}'. Always present.",
+                  "pattern": "^chain_hash:[0-9a-f]{64}$"
+                },
+                "signature_line": {
+                  "type": "string",
+                  "description": "Format: 'signature:{base64-ed25519}' when a key is available, or '# Ed25519 signing not available' otherwise.",
+                  "oneOf": [
+                    {"pattern": "^signature:[A-Za-z0-9+/]+=*$"},
+                    {"const": "# Ed25519 signing not available"}
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "public_key_pem": {
+          "type": "object",
+          "description": "session_proof/public_key.pem — The signer's Ed25519 public key in hex, or a placeholder when no key is configured.",
+          "required": ["path", "format"],
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "const": "session_proof/public_key.pem",
+              "description": "Archive-relative path to the file."
+            },
+            "format": {
+              "type": "string",
+              "const": "plain text, one line",
+              "description": "Single-line comment. Either '# Ed25519 public key: {64-char-hex}' or '# No signing key configured'."
+            }
+          }
+        },
+        "verify_py": {
+          "type": "object",
+          "description": "session_proof/verify.py — Self-contained Python 3 verification script. Requires only stdlib (hashlib, json, sys, pathlib). Must exit 0 on success, 1 on failure.",
+          "required": ["path", "runtime", "exit_codes"],
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "const": "session_proof/verify.py",
+              "description": "Archive-relative path to the file."
+            },
+            "runtime": {
+              "type": "string",
+              "const": "Python 3 (stdlib only; cryptography library optional for Ed25519 verification)",
+              "description": "Execution requirements. No installation needed beyond Python 3."
+            },
+            "exit_codes": {
+              "type": "object",
+              "description": "Verifier exit codes.",
+              "required": ["success", "failure"],
+              "additionalProperties": false,
+              "properties": {
+                "success": {
+                  "type": "integer",
+                  "const": 0,
+                  "description": "Hash chain verified; signature verified or skipped."
+                },
+                "failure": {
+                  "type": "integer",
+                  "const": 1,
+                  "description": "Hash chain broken or Ed25519 signature invalid."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "optional_files": {
+      "type": "object",
+      "description": "Optional extension files that may be present in the bundle.",
+      "additionalProperties": false,
+      "properties": {
+        "previous_bundle_hash_txt": {
+          "type": "object",
+          "description": "session_proof/previous_bundle_hash.txt — SHA-256 of the predecessor .tar.gz bundle. Present only for scan chains. See AIVS v1.0 Section 6.8.",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "const": "session_proof/previous_bundle_hash.txt"
+            },
+            "format": {
+              "type": "string",
+              "const": "plain text: 64-char lowercase hex SHA-256 of the predecessor .tar.gz file"
+            }
+          }
+        },
+        "merkle_tree_json": {
+          "type": "object",
+          "description": "session_proof/merkle_tree.json — Binary Merkle tree over page content hashes for multi-page crawl sessions. See AIVS v1.0 Section 6.9.",
+          "additionalProperties": false,
+          "properties": {
+            "path": {
+              "type": "string",
+              "const": "session_proof/merkle_tree.json"
+            },
+            "format": {
+              "type": "string",
+              "const": "JSON object with fields: root (hex), leaf_count (integer), pages (array of {url, hash, leaf_index}), tree (array of arrays of hex hashes)"
+            }
+          }
+        }
+      }
+    },
+    "compression": {
+      "type": "string",
+      "const": "gzip",
+      "description": "The outer compression format of the archive (RFC 1952)."
+    },
+    "archive_format": {
+      "type": "string",
+      "const": "tar (POSIX.1-2001)",
+      "description": "The inner archive format."
+    }
+  },
+  "examples": [
+    {
+      "archive_filename": "aivs_proof_sess-d4e_1742000421.tar.gz",
+      "top_level_directory": "session_proof/",
+      "aivs_version": "1.0",
+      "compression": "gzip",
+      "archive_format": "tar (POSIX.1-2001)",
+      "required_files": {
+        "audit_log_jsonl": {
+          "path": "session_proof/audit_log.jsonl",
+          "format": "JSONL",
+          "schema_ref": "https://aivs.dev/schemas/v1/audit-log-entry.schema.json",
+          "ordering": "ascending by id"
+        },
+        "manifest_json": {
+          "path": "session_proof/manifest.json",
+          "format": "JSON",
+          "schema_ref": "https://aivs.dev/schemas/v1/manifest.schema.json"
+        },
+        "session_sig_txt": {
+          "path": "session_proof/session_sig.txt",
+          "format": "plain text, two lines",
+          "fields": {
+            "chain_hash_line": "chain_hash:7a98cea38daa6b38541bac9c5be28a0b9b60021eb9e14b2226ad5b5537f9a568",
+            "signature_line": "# Ed25519 signing not available"
+          }
+        },
+        "public_key_pem": {
+          "path": "session_proof/public_key.pem",
+          "format": "plain text, one line"
+        },
+        "verify_py": {
+          "path": "session_proof/verify.py",
+          "runtime": "Python 3 (stdlib only; cryptography library optional for Ed25519 verification)",
+          "exit_codes": {
+            "success": 0,
+            "failure": 1
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,311 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rfc version="3" ipr="trust200902" docName="draft-stone-vcap-ap2-binding-01" category="info" submissionType="independent" xml:lang="en" tocInclude="true" sortRefs="true" symRefs="true">
+  <front>
+    <title abbrev="VCAP-AP2">VCAP-AP2 Binding: Verified Delivery Settlement for the Agent Payments Protocol</title>
+    <seriesInfo name="Internet-Draft" value="draft-stone-vcap-ap2-binding-01"/>
+    <author fullname="Ben Stone" initials="B." surname="Stone">
+      <organization>SwarmSync.AI</organization>
+      <address>
+        <email>benstone@swarmsync.ai</email>
+        <uri>https://swarmsync.ai</uri>
+      </address>
+    </author>
+    <date year="2026" month="September" day="4"/>
+    <area>Applications</area>
+    <workgroup>Individual Submission</workgroup>
+    <keyword>AP2</keyword>
+    <keyword>agent payments</keyword>
+    <keyword>settlement</keyword>
+    <keyword>verification</keyword>
+    <abstract>
+      <t>This document defines a binding between Verified Commerce for Agent Protocols (VCAP) and the Agent Payments Protocol (AP2). AP2 supplies agent-commerce authorization evidence through IntentMandate, CartMandate, and PaymentMandate artifacts. VCAP supplies delivery verification, settlement evidence, escrow directives, timeout handling, and dispute handoff.</t>
+      <t>This revision deliberately does not model AP2 as an escrow or settlement state machine. Current AP2 positions itself as an authorization and security layer used within a surrounding commerce protocol, including Universal Commerce Protocol (UCP). Accordingly, this binding references AP2 mandates by cryptographic digest or opaque identifier and leaves payment capture, refund, and settlement transitions to the commerce protocol and payment rail.</t>
+    </abstract>
+  </front>
+  <middle>
+    <section anchor="s-1-scope">
+      <name>1. Scope</name>
+      <t>This binding defines:</t>
+      <ol>
+        <li>
+          <t>how an AP2-authorized transaction is bound to a VCAP service agreement;</t>
+        </li>
+        <li>
+          <t>how CartMandate and PaymentMandate evidence is referenced without rewriting AP2;</t>
+        </li>
+        <li>
+          <t>how VCAP delivery evidence is associated with the authorized transaction;</t>
+        </li>
+        <li>
+          <t>how a settlement processor consumes a VCAP SettlementDirective; and</t>
+        </li>
+        <li>
+          <t>how timeout, revocation, and dispute states preserve the AP2 authorization evidence.</t>
+        </li>
+      </ol>
+      <t>This binding does not add fields to AP2 core objects and does not claim that AP2 defines escrow, capture, refund, or settlement lifecycle states.</t>
+    </section>
+    <section anchor="s-2-ap2-model-used-by-this-binding">
+      <name>2. AP2 Model Used by This Binding</name>
+      <t>A conforming implementation MUST identify the AP2 version or commit/profile it implements.</t>
+      <t>The binding recognizes the following AP2 artifacts:</t>
+      <ul>
+        <li>
+          <t><tt>IntentMandate</tt>: user intent and authority context, particularly important for autonomous or human-not-present flows;</t>
+        </li>
+        <li>
+          <t><tt>CartMandate</tt>: merchant-signed cart/offer contents, including the payment request;</t>
+        </li>
+        <li>
+          <t><tt>PaymentMandate</tt>: user payment authorization and payment-response information.</t>
+        </li>
+      </ul>
+      <t>The surrounding commerce protocol, such as UCP, remains responsible for checkout/order lifecycle semantics. The payment processor or custody rail remains responsible for actual movement of funds.</t>
+      <section anchor="s-2-1-privacy-rule-for-intentmandate">
+        <name>2.1. Privacy Rule for IntentMandate</name>
+        <t>VCAP SHOULD bind to an IntentMandate by hash or opaque reference rather than copying its full contents into settlement evidence. Implementations MUST NOT disclose more IntentMandate content to a merchant, verifier, or payment party than the active AP2/commerce flow requires.</t>
+      </section>
+    </section>
+    <section anchor="s-3-binding-object">
+      <name>3. Binding Object</name>
+      <t>A VCAP implementation that consumes AP2 authorization MUST create an <tt>ap2_binding</tt> object:</t>
+      <sourcecode type="json">{
+  "ap2_binding_version": "1",
+  "ap2_profile": "string",
+  "intent_mandate_ref": "sha256:... | opaque-id | null",
+  "cart_mandate_ref": "sha256:...",
+  "payment_mandate_ref": "sha256:...",
+  "commerce_protocol": "ucp | custom | other",
+  "commerce_transaction_ref": "string",
+  "created_at": "RFC3339"
+}
+</sourcecode>
+      <t><tt>cart_mandate_ref</tt> and <tt>payment_mandate_ref</tt> are REQUIRED. <tt>intent_mandate_ref</tt> is REQUIRED when the active AP2 flow relies on an IntentMandate for authority and otherwise MAY be omitted.</t>
+      <t>Digests MUST be computed over the canonical representation used by the AP2 implementation or over the exact serialized artifact whose bytes are retained for audit. The binding MUST record which rule was used.</t>
+    </section>
+    <section anchor="s-4-vcap-service-agreement-binding">
+      <name>4. VCAP Service Agreement Binding</name>
+      <t>The VCAP service agreement MUST contain:</t>
+      <sourcecode type="json">{
+  "agreement_id": "UUID",
+  "authorization": {
+    "type": "ap2",
+    "binding": { "...": "ap2_binding from Section 3" }
+  },
+  "deliverables": [ ... ],
+  "verification_policy": { ... },
+  "settlement_policy": { ... }
+}
+</sourcecode>
+      <t>The VCAP agreement MUST NOT modify the AP2 mandate objects. It only references them.</t>
+      <t>The <tt>deliverables</tt> and <tt>verification_policy</tt> fields define what VCAP will verify after performance. Those criteria are VCAP semantics unless they are already represented by a compatible commerce-protocol field.</t>
+    </section>
+    <section anchor="s-5-delivery-evidence">
+      <name>5. Delivery Evidence</name>
+      <t>After the provider submits a deliverable, VCAP dispatches a <tt>verification_request</tt>. A successful verifier returns a <tt>verification_callback</tt> containing at least:</t>
+      <sourcecode type="json">{
+  "verification_id": "UUID",
+  "agreement_id": "UUID",
+  "passed": true,
+  "proof_hash": "sha256:...",
+  "proof_signature": "base64-ed25519",
+  "verifier_key_id": "verification-method-or-key-id",
+  "completed_at": "RFC3339"
+}
+</sourcecode>
+      <t>The signature MUST cover the agreement identifier, AP2 binding digest, verification result, proof hash, verifier key identifier, and completion time.</t>
+      <t>A verifier MUST NOT be given payment credentials or unrelated IntentMandate data merely to verify delivery.</t>
+    </section>
+    <section anchor="s-6-settlement-directive">
+      <name>6. Settlement Directive</name>
+      <t>VCAP produces a <tt>SettlementDirective</tt> after verification or dispute resolution:</t>
+      <sourcecode type="json">{
+  "directive_id": "UUID",
+  "agreement_id": "UUID",
+  "ap2_binding_hash": "sha256:...",
+  "action": "release | refund | partial | hold",
+  "amount": "decimal-or-null",
+  "currency": "string-or-null",
+  "proof_ref": "sha256:...",
+  "reason_code": "verified | failed | timeout | dispute_ruling",
+  "issued_at": "RFC3339",
+  "signature": "base64-ed25519",
+  "issuer_key_id": "verification-method-or-key-id"
+}
+</sourcecode>
+      <t>A SettlementDirective is an instruction to a compatible commerce/payment implementation. VCAP itself does not move funds.</t>
+      <t>The settlement processor MUST verify that:</t>
+      <ol>
+        <li>
+          <t>the directive signature is valid;</t>
+        </li>
+        <li>
+          <t>the <tt>ap2_binding_hash</tt> matches the authorization evidence for the transaction;</t>
+        </li>
+        <li>
+          <t>the agreement is the same agreement for which the payment commitment was created;</t>
+        </li>
+        <li>
+          <t>the directive has not already been consumed; and</t>
+        </li>
+        <li>
+          <t>the requested action is allowed by the local commerce/payment profile.</t>
+        </li>
+      </ol>
+    </section>
+    <section anchor="s-7-state-mapping">
+      <name>7. State Mapping</name>
+      <t>VCAP uses its own state machine:</t>
+      <sourcecode type="text">AUTHORIZED -&gt; HELD -&gt; DELIVERED -&gt; VERIFYING
+                         |            |
+                         |            +-&gt; VERIFIED -&gt; DIRECTIVE_ISSUED
+                         |            +-&gt; FAILED   -&gt; DIRECTIVE_ISSUED
+                         |            +-&gt; TIMEOUT  -&gt; HOLD / REVIEW
+                         |
+                         +-&gt; DISPUTED -&gt; ADRP / profile-specific resolution
+</sourcecode>
+      <t>These are VCAP states. They MUST NOT be represented as AP2 core states unless a future AP2 specification explicitly defines corresponding semantics.</t>
+    </section>
+    <section anchor="s-8-timeout-and-dispute">
+      <name>8. Timeout and Dispute</name>
+      <t>On verification timeout:</t>
+      <ul>
+        <li>
+          <t>funds SHOULD remain held when the payment rail supports a hold;</t>
+        </li>
+        <li>
+          <t>no success or failure result may be fabricated;</t>
+        </li>
+        <li>
+          <t>the implementation SHOULD retry or route to review according to the VCAP agreement; and</t>
+        </li>
+        <li>
+          <t>the AP2 authorization evidence MUST remain unchanged.</t>
+        </li>
+      </ul>
+      <t>If the transaction becomes disputed, the VCAP implementation SHOULD package the AP2 binding, service agreement, delivery evidence, and verifier evidence for ADRP or another agreed dispute mechanism.</t>
+    </section>
+    <section anchor="s-9-trust-integration-with-atep">
+      <name>9. Trust Integration with ATEP</name>
+      <t>ATEP MAY be used as a risk signal when creating the VCAP settlement policy. ATEP does not alter AP2 authorization.</t>
+      <t>An implementation MUST NOT treat an ATEP score or tier as permission to bypass AP2 user authorization. Trust scoring and authority are separate concerns.</t>
+    </section>
+    <section anchor="s-10-x402-and-other-payment-rails">
+      <name>10. x402 and Other Payment Rails</name>
+      <t>AP2 may be used with payment credentials or commerce flows that ultimately settle over x402 or other rails. Where x402 protocol version 2 is used, the settlement processor MUST follow the active x402 payment scheme and facilitator semantics. VCAP binds proof to the transaction but does not redefine x402 verification or settlement APIs.</t>
+    </section>
+    <section anchor="s-11-security-considerations">
+      <name>11. Security Considerations</name>
+      <section anchor="s-11-1-authorization-settlement-separation">
+        <name>11.1. Authorization/Settlement Separation</name>
+        <t>A valid AP2 mandate does not prove that delivery occurred. A valid VCAP delivery proof does not prove that the user authorized payment. A conforming implementation MUST validate both sides of that boundary before releasing value.</t>
+      </section>
+      <section anchor="s-11-2-upstream-drift">
+        <name>11.2. Upstream Drift</name>
+        <t>AP2 is evolving. Implementations MUST pin the AP2 version/profile they implement and MUST reject or ignore unknown binding assumptions. This specification intentionally uses references and hashes rather than cloning AP2 schemas.</t>
+      </section>
+      <section anchor="s-11-3-intent-privacy">
+        <name>11.3. Intent Privacy</name>
+        <t>IntentMandates may contain commercially or personally sensitive preferences. Hash references SHOULD be used where the full mandate is not needed. Hashing low-entropy content alone does not provide confidentiality; implementations SHOULD use access controls or keyed/commitment constructions where dictionary attacks are a concern.</t>
+      </section>
+      <section anchor="s-11-4-replay-and-idempotency">
+        <name>11.4. Replay and Idempotency</name>
+        <t>SettlementDirective identifiers MUST be unique. A processor MUST record consumed directives and MUST NOT apply the same directive more than once.</t>
+      </section>
+    </section>
+    <section anchor="s-12-conformance">
+      <name>12. Conformance</name>
+      <t>A conforming VCAP-AP2 binding implementation MUST:</t>
+      <ul>
+        <li>
+          <t>identify the AP2 version/profile in use;</t>
+        </li>
+        <li>
+          <t>bind CartMandate and PaymentMandate evidence to the VCAP agreement;</t>
+        </li>
+        <li>
+          <t>include IntentMandate evidence when required by the AP2 flow without unnecessary disclosure;</t>
+        </li>
+        <li>
+          <t>keep AP2 authorization artifacts immutable;</t>
+        </li>
+        <li>
+          <t>sign VCAP verification and settlement evidence with Ed25519 or a profile-equivalent public-key signature;</t>
+        </li>
+        <li>
+          <t>prevent replay of settlement directives;</t>
+        </li>
+        <li>
+          <t>preserve timeout as a non-merits state; and</t>
+        </li>
+        <li>
+          <t>never claim AP2 state transitions that are absent from the AP2 version in use.</t>
+        </li>
+      </ul>
+    </section>
+    <section anchor="s-13-iana-considerations">
+      <name>13. IANA Considerations</name>
+      <t>This document requests no IANA actions.</t>
+    </section>
+    <section anchor="s-14-references">
+      <name>14. References</name>
+      <section anchor="s-14-1-normative-references">
+        <name>14.1. Normative References</name>
+        <ul>
+          <li>
+            <t>RFC 8032, Edwards-Curve Digital Signature Algorithm (EdDSA).</t>
+          </li>
+          <li>
+            <t>RFC 8785, JSON Canonicalization Scheme (JCS).</t>
+          </li>
+          <li>
+            <t>VCAP, <tt>draft-stone-vcap-02</tt>, work in progress.</t>
+          </li>
+          <li>
+            <t>ATEP, <tt>draft-stone-atep-02</tt>, work in progress.</t>
+          </li>
+        </ul>
+      </section>
+      <section anchor="s-14-2-informative-references">
+        <name>14.2. Informative References</name>
+        <ul>
+          <li>
+            <t>Google Agent Payments Protocol (AP2), current public specification and SDK.</t>
+          </li>
+          <li>
+            <t>Universal Commerce Protocol (UCP).</t>
+          </li>
+          <li>
+            <t>x402 Protocol Specification, version 2.</t>
+          </li>
+          <li>
+            <t>ADRP, <tt>draft-stone-adrp-01</tt>, work in progress.</t>
+          </li>
+        </ul>
+      </section>
+    </section>
+    <section anchor="appendix-a-changes-from-00">
+      <name>Appendix A: Changes from -00</name>
+      <ul>
+        <li>
+          <t>Removed the obsolete assumption that AP2 defines <tt>PaymentIntent.terms.captureType</tt>, <tt>releaseCondition</tt>, <tt>disputeWindow</tt>, or AP2-native capture/refund state transitions.</t>
+        </li>
+        <li>
+          <t>Rebound VCAP to the current AP2 IntentMandate, CartMandate, and PaymentMandate model.</t>
+        </li>
+        <li>
+          <t>Treated AP2 as authorization/security evidence within a surrounding commerce protocol such as UCP.</t>
+        </li>
+        <li>
+          <t>Added hash/reference-based IntentMandate privacy rules.</t>
+        </li>
+        <li>
+          <t>Added explicit SettlementDirective semantics and idempotency.</t>
+        </li>
+        <li>
+          <t>Updated x402 references to protocol version 2.</t>
+        </li>
+      </ul>
+    </section>
+  </middle>
+</rfc>

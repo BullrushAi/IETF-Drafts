@@ -1,0 +1,892 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE rfc SYSTEM "rfc2629.dtd">
+<?rfc toc="yes"?>
+<?rfc sortrefs="yes"?>
+<?rfc symrefs="yes"?>
+<?rfc compact="yes"?>
+<?rfc subcompact="no"?>
+<rfc ipr="trust200902" docName="draft-stone-vcap-00" category="info"
+     xmlns:xi="http://www.w3.org/2001/XInclude">
+  <front>
+    <title abbrev="VCAP">VCAP: Verified Commerce for Agent Protocols</title>
+    <author fullname="Ben Stone" initials="B." surname="Stone">
+      <organization>SwarmSync.AI</organization>
+      <address>
+        <email>benstone@swarmsync.ai</email>
+      </address>
+    </author>
+    <date year="2026" month="March"/>
+    <area>Applications</area>
+    <workgroup>Individual Submission</workgroup>
+    <keyword>agent payments</keyword>
+    <keyword>escrow</keyword>
+    <keyword>verified delivery</keyword>
+    <keyword>AI agents</keyword>
+    <abstract>
+      <t>This document specifies the Verified Commerce for Agent Protocols (VCAP), an open standard for settling financial transactions between autonomous AI agents using cryptographically verifiable proof of work delivery. VCAP defines the message formats, state machines, cryptographic bindings, and callback contracts required for any agent marketplace to hold funds in escrow, automatically verify deliverables via independent verification engines, and release or refund payments based on machine-verifiable evidence. VCAP is designed as a settlement layer that complements agent-to-agent communication protocols (such as Google A2A or the Agent Protocol). Where those protocols define how agents discover and talk to each other, VCAP defines how agents pay each other with proof that work was done.</t>
+    </abstract>
+  </front>
+  <middle>
+  <section title="1. Introduction">
+    <t>The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+    "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+    "OPTIONAL" in this document are to be interpreted as described in BCP 14
+    <xref target="RFC2119"/> <xref target="RFC8174"/> when, and only when,
+    they appear in all capitals, as shown here.</t>
+    <section title="1.1 Problem Statement">
+      <t>As AI agents proliferate, they increasingly need to transact with one another: hire other agents, delegate subtasks, and pay for completed work. Today there is no standard for:</t>
+      <t>How an agent requests work and holds payment in escrow</t>
+      <t>How a delivering agent proves the work was actually done</t>
+      <t>How a verification engine independently confirms delivery</t>
+      <t>How proof of verification cryptographically triggers fund release</t>
+      <t>How timeouts and disputes are escalated to human review</t>
+      <t>Each marketplace invents its own ad-hoc system, creating fragmentation and vendor lock-in. VCAP provides a vendor-neutral protocol that any marketplace, payment processor, or agent framework can implement.</t>
+    </section>
+    <section title="1.2 Design Goals">
+      <figure>
+        <artwork type="table"><![CDATA[
+| Goal | Description |
+|------|-------------|
+| **Vendor-neutral** | Any marketplace or payment processor can implement VCAP |
+| **Verification-agnostic** | Any verification engine (browser automation, LLM evaluation, human review) can produce VCAP-compliant proofs |
+| **Cryptographically auditable** | Every settlement is tied to a proof hash and signature that can be independently verified |
+| **Graceful degradation** | Automated verification falls back to human review on timeout or ambiguity |
+| **Composable** | VCAP layers on top of existing agent communication protocols (A2A, Agent Protocol, custom) |
+| **Minimal** | The spec defines only what is necessary; implementations may extend it |
+]]></artwork>
+      </figure>
+    </section>
+    <section title="1.3 Relationship to Other Protocols">
+      <t>VCAP relates to several existing protocols. The Agent Payments Protocol
+      (AP2) <xref target="AP2"/> defines payment intents that VCAP fulfills
+      at the settlement layer. The Agent-to-Agent Protocol
+      <xref target="A2A"/> handles agent discovery and messaging; VCAP adds
+      payment settlement on top.</t>
+      <figure>
+        <artwork type="table"><![CDATA[
+| Protocol | Layer | VCAP Relationship |
+|----------|-------|-------------------|
+| Google A2A | Agent Communication | VCAP sits above A2A; uses A2A for discovery/messaging, adds payment settlement |
+| Agent Protocol | Task Execution | VCAP wraps Agent Protocol tasks with escrow and verification |
+| AIVS (AI Visibility Verification Standard) | Proof Format | AIVS proof bundles are one valid VCAP proof format |
+| OAuth 2.0 | Authorization | VCAP agents may use OAuth for identity; VCAP adds payment semantics |
+| Stripe Connect / x402 | Payment Rails | VCAP is rail-agnostic; Stripe, crypto, or internal wallets can serve as the escrow backend |
+]]></artwork>
+      </figure>
+    </section>
+    <section title="1.4 Terminology">
+      <figure>
+        <artwork type="table"><![CDATA[
+| Term | Definition |
+|------|------------|
+| **Requester** | The agent (or human) that initiates a service request and holds payment |
+| **Provider** | The agent that performs the work and receives payment |
+| **Marketplace** | The platform that facilitates discovery, escrow, and settlement |
+| **Verifier** | An independent engine that confirms whether work was delivered (may be automated or human) |
+| **Escrow** | A financial hold on the requester's funds, released only upon verified delivery |
+| **Proof Bundle** | A cryptographically signed artifact attesting to the verification result |
+| **Service Agreement** | The contract between requester and provider, specifying deliverables and payment |
+]]></artwork>
+      </figure>
+    </section>
+  </section>
+
+  <section title="2. Protocol Overview">
+    <section title="2.1 Flow Summary">
+      <figure>
+        <artwork type="sourcecode"><![CDATA[
+   Requester                  Marketplace                Provider              Verifier
+      │                          │                          │                     │
+      │──── 1. NEGOTIATE ───────>│                          │                     │
+      │                          │──── 2. FORWARD ─────────>│                     │
+      │                          │<─── 3. RESPOND ──────────│                     │
+      │<─── 4. TERMS ───────────│                          │                     │
+      │──── 5. ACCEPT ─────────>│                          │                     │
+      │                          │── 6. ESCROW_HOLD ───────>│ (funds reserved)    │
+      │                          │── 7. AGREEMENT_CREATED ─>│                     │
+      │                          │                          │                     │
+      │                          │     [Provider works...]  │                     │
+      │                          │                          │                     │
+      │                          │<─── 8. DELIVER ──────────│                     │
+      │                          │──────────── 9. VERIFY ──────────────────────>│
+      │                          │                          │                     │
+      │                          │      [Verifier runs...]  │                     │
+      │                          │                          │                     │
+      │                          │<──────── 10. CALLBACK ──────────────────────│
+      │                          │                          │                     │
+      │                          │── 11a. ESCROW_RELEASE ──>│ (if VERIFIED)       │
+      │                          │── 11b. ESCROW_REFUND ───>│ (if FAILED)         │
+      │<── 12. SETTLEMENT_RECEIPT│                          │                     │
+]]></artwork>
+      </figure>
+    </section>
+    <section title="2.2 Protocol Phases">
+      <figure>
+        <artwork type="table"><![CDATA[
+| Phase | Name | Description |
+|-------|------|-------------|
+| Phase 1 | **Negotiation** | Requester and provider agree on scope, price, and verification criteria |
+| Phase 2 | **Escrow** | Marketplace holds requester's funds in escrow |
+| Phase 3 | **Execution** | Provider performs the work |
+| Phase 4 | **Delivery** | Provider submits deliverables with verification hints |
+| Phase 5 | **Verification** | Independent verifier confirms delivery against the agreement |
+| Phase 6 | **Settlement** | Escrow releases (on verification) or refunds (on failure) |
+| Phase 7 | **Escalation** | Timeout or ambiguity routes to human review |
+]]></artwork>
+      </figure>
+    </section>
+  </section>
+
+  <section title="3. Message Formats">
+    <section title="3.1 Negotiation Request">
+      <t>Sent by the requester to initiate a service request.</t>
+      <figure>
+        <name>json</name>
+        <artwork type="sourcecode"><![CDATA[
+{
+  "vcap_version": "1.0",
+  "message_type": "negotiation_request",
+  "negotiation_id": "string (UUID, generated by marketplace)",
+  "requester": {
+    "agent_id": "string (URI or UUID)",
+    "platform": "string (e.g., 'swarmsync', 'custom')"
+  },
+  "provider": {
+    "agent_id": "string (URI or UUID)",
+    "platform": "string"
+  },
+  "request": {
+    "service_type": "string (free-form or from a taxonomy)",
+    "description": "string (human-readable description of work)",
+    "budget_amount": "number (decimal, in currency units)",
+    "budget_currency": "string (ISO 4217, e.g., 'USD')",
+    "requirements": "object (OPTIONAL, implementation-specific)",
+    "deadline_utc": "string (OPTIONAL, ISO 8601 datetime)"
+  },
+  "verification_hints": {
+    "type": "string (OPTIONAL, e.g., 'url', 'artifact', 'llm_eval', 'human')",
+    "url": "string (OPTIONAL, URL of deliverable to verify)",
+    "selector": "string (OPTIONAL, CSS selector or JSONPath for content extraction)",
+    "expected_content": "string (OPTIONAL, substring or pattern to match)",
+    "fingerprint_delta": "boolean (OPTIONAL, check if content changed)",
+    "custom": "object (OPTIONAL, verifier-specific parameters)"
+  },
+  "metadata": "object (OPTIONAL, implementation-specific)"
+}
+]]></artwork>
+      </figure>
+    </section>
+    <section title="3.2 Negotiation Response">
+      <t>Sent by the provider to accept, reject, or counter the request.</t>
+      <figure>
+        <name>json</name>
+        <artwork type="sourcecode"><![CDATA[
+{
+  "vcap_version": "1.0",
+  "message_type": "negotiation_response",
+  "negotiation_id": "string (matches request)",
+  "response_status": "ACCEPTED | REJECTED | COUNTERED",
+  "counter_terms": {
+    "amount": "number (OPTIONAL, counter-offer price)",
+    "currency": "string (OPTIONAL)",
+    "description": "string (OPTIONAL, modified scope)",
+    "deadline_utc": "string (OPTIONAL)",
+    "rejection_reason": "string (OPTIONAL, when REJECTED)"
+  },
+  "provider_verification_hints": {
+    "type": "string (OPTIONAL, provider may suggest verification method)",
+    "url": "string (OPTIONAL)",
+    "custom": "object (OPTIONAL)"
+  }
+}
+]]></artwork>
+      </figure>
+    </section>
+    <section title="3.3 Escrow Hold">
+      <t>Created by the marketplace when negotiation reaches ACCEPTED.</t>
+      <figure>
+        <name>json</name>
+        <artwork type="sourcecode"><![CDATA[
+{
+  "vcap_version": "1.0",
+  "message_type": "escrow_hold",
+  "escrow_id": "string (UUID)",
+  "negotiation_id": "string",
+  "source_wallet": "string (requester's wallet/account identifier)",
+  "destination_wallet": "string (provider's wallet/account identifier)",
+  "amount": "number (decimal)",
+  "currency": "string (ISO 4217)",
+  "status": "HELD",
+  "release_condition": "string (memo linking escrow to negotiation)",
+  "held_at": "string (ISO 8601)",
+  "metadata": "object (OPTIONAL)"
+}
+]]></artwork>
+      </figure>
+    </section>
+    <section title="3.4 Service Delivery">
+      <t>Sent by the provider to claim work completion.</t>
+      <figure>
+        <name>json</name>
+        <artwork type="sourcecode"><![CDATA[
+{
+  "vcap_version": "1.0",
+  "message_type": "service_delivery",
+  "negotiation_id": "string",
+  "escrow_id": "string",
+  "provider": {
+    "agent_id": "string",
+    "platform": "string"
+  },
+  "delivery": {
+    "status": "string ('success' | 'partial' | 'failed')",
+    "description": "string (what was delivered)",
+    "artifacts": [
+      {
+        "type": "string (e.g., 'url', 'file', 'text', 'api_response')",
+        "uri": "string (OPTIONAL)",
+        "content": "string (OPTIONAL, inline content)",
+        "hash": "string (OPTIONAL, SHA-256 of artifact)"
+      }
+    ]
+  },
+  "verification_hints": {
+    "url": "string (OPTIONAL, URL to verify)",
+    "selector": "string (OPTIONAL, CSS selector for content extraction)",
+    "expected_content": "string (OPTIONAL, substring to find)",
+    "fingerprint_delta": "boolean (OPTIONAL, default false)",
+    "auto_approve": "boolean (OPTIONAL, skip automated verification)"
+  },
+  "delivered_at": "string (ISO 8601)"
+}
+]]></artwork>
+      </figure>
+    </section>
+    <section title="3.5 Verification Request">
+      <t>Sent by the marketplace to the verifier engine.</t>
+      <figure>
+        <name>json</name>
+        <artwork type="sourcecode"><![CDATA[
+{
+  "vcap_version": "1.0",
+  "message_type": "verification_request",
+  "verification_id": "string (UUID)",
+  "negotiation_id": "string",
+  "spec": {
+    "url": "string (URL to verify)",
+    "selector": "string | null (CSS selector for extraction)",
+    "expected_content": "string | null (substring match, case-insensitive)",
+    "fingerprint_delta": "boolean (check content change)",
+    "timeout_seconds": "number (max verification duration, default 1800)"
+  },
+  "context": {
+    "marketplace": "string (marketplace identifier)",
+    "purpose": "escrow_verification",
+    "escrow_ref": "string (escrow ID)",
+    "negotiation_id": "string",
+    "verification_id": "string"
+  },
+  "requested_at": "string (ISO 8601)"
+}
+]]></artwork>
+      </figure>
+    </section>
+    <section title="3.6 Verification Callback (Core Message)">
+      <t>Sent by the verifier back to the marketplace. This is the most critical message in the protocol -- it triggers escrow settlement.</t>
+      <figure>
+        <name>json</name>
+        <artwork type="sourcecode"><![CDATA[
+{
+  "vcap_version": "1.0",
+  "message_type": "verification_callback",
+  "verification_id": "string (matches request)",
+  "passed": "boolean (true = verified, false = failed)",
+  "proof_hash": "string (SHA-256 hex digest of the canonical proof bundle)",
+  "proof_signature": "string (HMAC-SHA256 hex digest, signed with shared secret)",
+  "extracted_content": "string (OPTIONAL, truncated content from target)",
+  "failure_reason": "string (OPTIONAL, human-readable when passed=false)",
+  "action_log": [
+    {
+      "index": "number (0-based sequential order)",
+      "action": "string (e.g., 'NAVIGATE', 'EXTRACT', 'SCREENSHOT', 'FINGERPRINT')",
+      "url": "string (OPTIONAL)",
+      "selector": "string (OPTIONAL)",
+      "success": "boolean",
+      "cost_cents": "number (cost of this action)",
+      "duration_ms": "number (OPTIONAL)",
+      "timestamp": "string (ISO 8601)",
+      "data_snippet": "string (OPTIONAL, first N chars of extracted data)"
+    }
+  ],
+  "completed_at": "string (ISO 8601)"
+}
+]]></artwork>
+      </figure>
+    </section>
+    <section title="3.7 Escrow Settlement">
+      <t>The final state of the escrow after verification.</t>
+      <figure>
+        <name>json</name>
+        <artwork type="sourcecode"><![CDATA[
+{
+  "vcap_version": "1.0",
+  "message_type": "escrow_settlement",
+  "escrow_id": "string",
+  "negotiation_id": "string",
+  "status": "RELEASED | REFUNDED",
+  "verification_id": "string (links to the verification that triggered settlement)",
+  "proof_hash": "string (copied from verification callback for audit trail)",
+  "proof_signature": "string (copied from verification callback)",
+  "evidence": {
+    "conduit_verification_id": "string (OPTIONAL)",
+    "proof_hash": "string",
+    "proof_signature": "string",
+    "extracted_content": "string (OPTIONAL)",
+    "action_log": "array (OPTIONAL, full action log)"
+  },
+  "platform_fee": {
+    "amount": "number (OPTIONAL)",
+    "currency": "string (OPTIONAL)",
+    "rate": "number (OPTIONAL, decimal, e.g. 0.05 for 5%)"
+  },
+  "settled_at": "string (ISO 8601)"
+}
+]]></artwork>
+      </figure>
+    </section>
+  </section>
+
+  <section title="4. State Machines">
+    <section title="4.1 Negotiation State Machine">
+      <figure>
+        <artwork type="sourcecode"><![CDATA[
+                    ┌──────────────┐
+                    │   PENDING    │
+                    └──────┬───────┘
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+              ▼            ▼            ▼
+        ┌──────────┐ ┌──────────┐ ┌──────────┐
+        │ ACCEPTED │ │COUNTERED │ │ DECLINED │
+        └────┬─────┘ └────┬─────┘ └──────────┘
+             │            │                     (terminal)
+             │            │
+             │       ┌────┴────┐
+             │       │ PENDING │  (counter-offer restarts negotiation)
+             │       └─────────┘
+             │
+             ▼
+   [Escrow Hold Created]
+   [Service Agreement Created]
+]]></artwork>
+      </figure>
+      <t>Transitions:</t>
+      <figure>
+        <artwork type="table"><![CDATA[
+| From | To | Trigger |
+|------|----|---------|
+| PENDING | ACCEPTED | Provider accepts terms |
+| PENDING | COUNTERED | Provider counter-offers |
+| PENDING | DECLINED | Provider rejects |
+| COUNTERED | ACCEPTED | Requester accepts counter |
+| COUNTERED | DECLINED | Requester rejects counter |
+| COUNTERED | COUNTERED | Requester counter-counters |
+]]></artwork>
+      </figure>
+    </section>
+    <section title="4.2 Escrow State Machine">
+      <figure>
+        <artwork type="sourcecode"><![CDATA[
+              ┌──────────┐
+              │   HELD   │
+              └────┬─────┘
+                   │
+         ┌─────────┼─────────┐
+         │                    │
+         ▼                    ▼
+   ┌──────────┐         ┌──────────┐
+   │ RELEASED │         │ REFUNDED │
+   └──────────┘         └──────────┘
+   (terminal)           (terminal)
+]]></artwork>
+      </figure>
+      <t>Transitions:</t>
+      <figure>
+        <artwork type="table"><![CDATA[
+| From | To | Trigger | Guard |
+|------|----|---------|-------|
+| HELD | RELEASED | Verification VERIFIED | Atomic CAS: `status = 'HELD'` |
+| HELD | REFUNDED | Verification FAILED or REJECTED | Atomic CAS: `status = 'HELD'` |
+| HELD | REFUNDED | Timeout + manual rejection | Atomic CAS: `status = 'HELD'` |
+]]></artwork>
+      </figure>
+      <t>Concurrency Guard: The HELD -&gt; RELEASED/REFUNDED transition MUST use an atomic compare-and-swap (CAS) operation to prevent double-release. Implementations SHOULD use database-level atomic updates:</t>
+      <figure>
+        <name>sql</name>
+        <artwork type="sourcecode"><![CDATA[
+UPDATE Escrow SET status = 'RELEASED', released_at = NOW()
+WHERE id = :escrow_id AND status = 'HELD'
+-- Returns 0 rows affected if already transitioned
+]]></artwork>
+      </figure>
+    </section>
+    <section title="4.3 Verification State Machine">
+      <figure>
+        <artwork type="sourcecode"><![CDATA[
+   ┌─────────┐
+   │ PENDING │
+   └────┬────┘
+        │
+        ▼
+   ┌─────────┐
+   │ RUNNING │
+   └────┬────┘
+        │
+   ┌────┼────────┬──────────┐
+   │    │        │          │
+   ▼    ▼        ▼          ▼
+┌────┐┌────┐ ┌───────┐ ┌───────┐
+│VERI││FAIL│ │TIMEOUT│ │ ERROR │
+│FIED││ ED │ └───┬───┘ └───────┘
+└──┬─┘└──┬─┘     │
+   │     │       ▼
+   │     │  [Manual Review]
+   │     │       │
+   │     │  ┌────┴────┐
+   │     │  │ PENDING │ (OutcomeVerification)
+   │     │  └─────────┘
+   ▼     ▼
+[ESCROW  [ESCROW
+RELEASE] REFUND]
+]]></artwork>
+      </figure>
+      <t>Transitions:</t>
+      <figure>
+        <artwork type="table"><![CDATA[
+| From | To | Trigger |
+|------|----|---------|
+| PENDING | RUNNING | Verifier acknowledges job |
+| RUNNING | VERIFIED | Verification callback `passed=true` |
+| RUNNING | FAILED | Verification callback `passed=false` |
+| RUNNING | TIMEOUT | No callback within `timeout_seconds` |
+| RUNNING | ERROR | Verifier reports internal error |
+| PENDING | TIMEOUT | No acknowledgment within `timeout_seconds` |
+| TIMEOUT | (manual) | Escalated to human review queue |
+]]></artwork>
+      </figure>
+    </section>
+    <section title="4.4 Service Agreement State Machine">
+      <figure>
+        <artwork type="sourcecode"><![CDATA[
+   ┌────────┐
+   │ ACTIVE │
+   └───┬────┘
+       │
+  ┌────┼────────┐
+  │    │        │
+  ▼    ▼        ▼
+┌────┐┌────┐ ┌────┐
+│COMP││DISP│ │CANC│
+│LETE││UTED│ │ELED│
+│  D ││    │ │    │
+└────┘└────┘ └────┘
+]]></artwork>
+      </figure>
+      <figure>
+        <artwork type="table"><![CDATA[
+| From | To | Trigger |
+|------|----|---------|
+| ACTIVE | COMPLETED | Verification VERIFIED |
+| ACTIVE | DISPUTED | Verification REJECTED |
+| ACTIVE | CANCELLED | Either party cancels before delivery |
+]]></artwork>
+      </figure>
+    </section>
+  </section>
+
+  <section title="5. Cryptographic Binding">
+    <section title="5.1 Proof Hash">
+      <t>The proof_hash field in the Verification Callback MUST be computed as:</t>
+      <figure>
+        <artwork type="sourcecode"><![CDATA[
+proof_hash = SHA-256(canonical_json(proof_bundle))
+]]></artwork>
+      </figure>
+      <t>Where canonical_json serializes the proof bundle with:</t>
+      <t>Object keys sorted alphabetically (recursive)</t>
+      <t>No whitespace between tokens</t>
+      <t>UTF-8 encoding</t>
+      <t>No trailing newline</t>
+    </section>
+    <section title="5.2 Proof Signature">
+      <t>The proof_signature field MUST be computed as:</t>
+      <figure>
+        <artwork type="sourcecode"><![CDATA[
+proof_signature = HMAC-SHA256(canonical_json(proof_body), shared_secret)
+]]></artwork>
+      </figure>
+      <t>Where:</t>
+      <t>proof_body contains at minimum: { verification_id, negotiation_id, escrow_ref, passed, proof_hash, completed_at }</t>
+      <t>shared_secret is a pre-shared key between the marketplace and verifier (minimum 32 bytes)</t>
+      <t>The signature binds the proof to the specific escrow, preventing replay across different transactions</t>
+    </section>
+    <section title="5.3 Action Log Hash Chain (OPTIONAL, RECOMMENDED)">
+      <t>For verifiers that record sequential actions (e.g., browser automation), the action log SHOULD be hash-chained:</t>
+      <figure>
+        <artwork type="sourcecode"><![CDATA[
+hash_0 = SHA-256(canonical_json(action_0))
+hash_1 = SHA-256(canonical_json(action_1) || hash_0)
+hash_2 = SHA-256(canonical_json(action_2) || hash_1)
+...
+hash_n = SHA-256(canonical_json(action_n) || hash_(n-1))
+]]></artwork>
+      </figure>
+      <t>The final hash_n SHOULD be included in the proof bundle. Modifying any past action immediately invalidates all subsequent hashes, providing tamper evidence.</t>
+    </section>
+    <section title="5.4 Agent Identity Binding (OPTIONAL)">
+      <t>When agent identity is cryptographically established (e.g., via Ed25519 key pairs), the proof bundle MAY include:</t>
+      <figure>
+        <name>json</name>
+        <artwork type="sourcecode"><![CDATA[
+{
+  "agent_identity": {
+    "agent_id": "string",
+    "public_key": "string (PEM, Ed25519 SPKI format)",
+    "signature": "string (HMAC-SHA256 of agent_id + timestamp, signed with agent's private key)",
+    "timestamp": "string (ISO 8601)"
+  }
+}
+]]></artwork>
+      </figure>
+      <t>Agent identity headers for HTTP transport:</t>
+      <figure>
+        <artwork type="sourcecode"><![CDATA[
+X-Agent-Id: <agent UUID>
+X-Agent-Signature: <ISO-timestamp>.<HMAC-SHA256-hex>
+X-Agent-Platform: <platform identifier>
+]]></artwork>
+      </figure>
+    </section>
+  </section>
+
+  <section title="6. Verification Engines">
+    <section title="6.1 Verifier Requirements">
+      <t>A compliant VCAP verifier MUST:</t>
+      <t>Accept a verification_request message</t>
+      <t>Return a verification_callback message within the specified timeout_seconds</t>
+      <t>Include a proof_hash computed per Section 5.1</t>
+      <t>Include a proof_signature computed per Section 5.2</t>
+      <t>Set passed to true only if the verification criteria are met</t>
+      <t>6. Include an action_log documenting all steps taken</t>
+      <t>A compliant VCAP verifier SHOULD:</t>
+      <t>Use hash-chained action logs per Section 5.3</t>
+      <t>Include extracted_content when applicable</t>
+      <t>Provide human-readable failure_reason when passed=false</t>
+    </section>
+    <section title="6.2 Example Verifier Types">
+      <figure>
+        <artwork type="table"><![CDATA[
+| Type | Description | Use Case |
+|------|-------------|----------|
+| **Browser Automation** | Navigates to URL, extracts content, fingerprints page | Web deliverables, deployed applications |
+| **LLM Evaluation** | Sends deliverable to an LLM for quality assessment | Content generation, code review |
+| **API Health Check** | Calls API endpoints and validates responses | API development tasks |
+| **Human Review** | Routes to a human reviewer with a structured rubric | Subjective quality, complex deliverables |
+| **Composite** | Chains multiple verifiers (e.g., browser + LLM) | Multi-criteria verification |
+]]></artwork>
+      </figure>
+    </section>
+    <section title="6.3 Verification Hints">
+      <t>The verification_hints object in the delivery message tells the verifier what to check. Standard hint fields:</t>
+      <figure>
+        <artwork type="table"><![CDATA[
+| Field | Type | Description |
+|-------|------|-------------|
+| `url` | string | URL of the deliverable to verify |
+| `selector` | string | CSS selector or JSONPath to extract specific content |
+| `expected_content` | string | Substring that must appear (case-insensitive) |
+| `fingerprint_delta` | boolean | If true, verify the page content has changed from a prior known state |
+| `auto_approve` | boolean | If true, skip automated verification (provider self-attests) |
+| `custom` | object | Verifier-specific parameters (e.g., LLM rubric, API schema) |
+]]></artwork>
+      </figure>
+    </section>
+  </section>
+
+  <section title="7. Timeout and Escalation">
+    <section title="7.1 Timeout Semantics">
+      <t>If a verification does not complete within timeout_seconds (default: 1800 seconds / 30 minutes):</t>
+      <t>The marketplace MUST transition the verification to TIMEOUT status</t>
+      <t>The escrow MUST remain in HELD status (funds are NOT auto-released or auto-refunded)</t>
+      <t>The marketplace SHOULD create a manual review queue entry with status PENDING</t>
+      <t>A human reviewer MUST make the final settlement decision</t>
+    </section>
+    <section title="7.2 Timeout Detection">
+      <t>Implementations SHOULD run a periodic check (recommended: every 5 minutes) that:</t>
+      <figure>
+        <artwork type="sourcecode"><![CDATA[
+FOR EACH verification WHERE
+  status IN ('PENDING', 'RUNNING') AND
+  created_at < (NOW() - timeout_seconds)
+DO
+  SET status = 'TIMEOUT'
+  SET failure_reason = 'Verification timed out — escalated to manual review'
+  CREATE manual_review_entry(status = 'PENDING')
+]]></artwork>
+      </figure>
+    </section>
+    <section title="7.3 Manual Review">
+      <t>When a verification is escalated to manual review, the reviewer has access to:</t>
+      <t>The original service agreement and negotiation terms</t>
+      <t>The provider's delivery artifacts</t>
+      <t>Any partial verification results (action logs, extracted content)</t>
+      <t>The escrow hold details</t>
+      <t>The reviewer MUST produce a standard verification_callback message with:</t>
+      <t>passed = true or passed = false</t>
+      <t>action_log containing a single entry documenting the manual decision</t>
+      <t>proof_hash and proof_signature computed normally</t>
+    </section>
+  </section>
+
+  <section title="8. Idempotency">
+    <section title="8.1 Delivery Idempotency">
+      <t>If the same provider submits delivery for the same escrow multiple times, the marketplace MUST return the existing verification result rather than creating a new one. This prevents:</t>
+      <t>Double-release of escrow funds</t>
+      <t>Duplicate verification jobs</t>
+      <t>Replay attacks</t>
+    </section>
+    <section title="8.2 Escrow Idempotency">
+      <t>The HELD -&gt; RELEASED/REFUNDED transition MUST be atomic and idempotent. If two concurrent processes attempt to settle the same escrow, exactly one MUST succeed and the other MUST observe the already-settled state.</t>
+    </section>
+    <section title="8.3 Verification Callback Idempotency">
+      <t>If a verifier sends the same callback multiple times (e.g., due to network retry), the marketplace MUST process only the first callback and acknowledge subsequent duplicates without re-settling the escrow.</t>
+    </section>
+  </section>
+
+  <section title="9. Security Considerations">
+    <section title="9.1 Shared Secret Management">
+      <t>The shared_secret used for proof_signature computation MUST:</t>
+      <t>Be at least 32 bytes of cryptographically random data</t>
+      <t>Be transmitted out-of-band (never in VCAP messages)</t>
+      <t>Be rotated periodically (recommended: every 90 days)</t>
+      <t>Be unique per marketplace-verifier pair</t>
+    </section>
+    <section title="9.2 Transport Security">
+      <t>All VCAP messages MUST be transmitted over TLS 1.2 or later.</t>
+    </section>
+    <section title="9.3 Callback Authentication">
+      <t>The marketplace MUST authenticate verification callbacks to prevent spoofing. Recommended mechanisms:</t>
+      <t>Shared secret in HTTP header (e.g., X-Internal-Secret)</t>
+      <t>Mutual TLS</t>
+      <t>Webhook signature verification</t>
+    </section>
+    <section title="9.4 Timing-Safe Comparison">
+      <t>All HMAC signature comparisons MUST use constant-time comparison to prevent timing oracle attacks.</t>
+    </section>
+    <section title="9.5 Proof Integrity">
+      <t>The proof_hash + proof_signature pair creates a dual-layer integrity check:</t>
+      <t>proof_hash verifies the proof content was not tampered with</t>
+      <t>proof_signature verifies the proof was generated by the authorized verifier</t>
+      <t>Both MUST be stored alongside the escrow settlement record for post-hoc auditability.</t>
+    </section>
+  </section>
+
+  <section title="10. Platform Fees">
+    <section title="10.1 Fee Declaration">
+      <figure>
+        <name>json</name>
+        <artwork type="sourcecode"><![CDATA[
+{
+  "platform_fee": {
+    "rate": 0.05,
+    "rate_type": "percentage",
+    "amount": 15,
+    "currency": "USD",
+    "split": {
+      "buyer_share": 0.5,
+      "seller_share": 0.5
+    }
+  }
+}
+]]></artwork>
+      </figure>
+    </section>
+    <section title="10.2 Fee Timing">
+      <t>Fees SHOULD be calculated at settlement time (not at escrow creation), because:</t>
+      <t>The provider's subscription tier may change between escrow creation and settlement</t>
+      <t>Partial completions may adjust the fee basis</t>
+      <t>Fee disputes should reference the fee at settlement time</t>
+    </section>
+  </section>
+
+  <section title="11. Extensibility">
+    <section title="11.1 Custom Fields">
+      <t>Implementations MAY add custom fields to any VCAP message using the metadata or custom objects. Standard VCAP processors MUST ignore unknown fields.</t>
+    </section>
+    <section title="11.2 Verification Engine Extensions">
+      <t>New verification engine types can be registered by publishing their:</t>
+      <t>Supported verification_hints fields</t>
+      <t>Action types they may include in action_log</t>
+      <t>Any custom proof_bundle fields</t>
+    </section>
+    <section title="11.3 Payment Rail Extensions">
+      <t>VCAP is agnostic to the underlying payment rail. The escrow_hold and escrow_settlement messages use wallet identifiers that can map to:</t>
+      <t>Internal platform wallets (balance-based)</t>
+      <t>Stripe Connect accounts</t>
+      <t>Cryptocurrency wallets (x402 protocol)</t>
+      <t>Bank accounts via ACH/SEPA</t>
+      <t>Any future payment method</t>
+    </section>
+  </section>
+
+  <section title="12. Conformance">
+    <section title="12.1 Conformance Levels">
+      <figure>
+        <artwork type="table"><![CDATA[
+| Level | Requirements |
+|-------|-------------|
+| **VCAP Core** | Implement all message formats, state machines, and escrow transitions from Sections 3-4 |
+| **VCAP Verified** | Core + cryptographic binding from Section 5 (proof_hash, proof_signature) |
+| **VCAP Full** | Verified + hash-chained action logs + agent identity binding + timeout escalation |
+]]></artwork>
+      </figure>
+    </section>
+    <section title="12.2 Implementation Checklist">
+      <t>A conformant implementation MUST:</t>
+      <t>[ ] Generate and process all seven message types (Sections 3.1-3.7)</t>
+      <t>[ ] Implement the negotiation state machine (Section 4.1)</t>
+      <t>[ ] Implement the escrow state machine with atomic CAS transitions (Section 4.2)</t>
+      <t>[ ] Implement the verification state machine (Section 4.3)</t>
+      <t>[ ] Compute proof_hash per Section 5.1</t>
+      <t>[ ] Compute proof_signature per Section 5.2</t>
+      <t>[ ] Support delivery idempotency (Section 8.1)</t>
+      <t>[ ] Support escrow idempotency (Section 8.2)</t>
+      <t>[ ] Use constant-time comparison for HMAC verification (Section 9.4)</t>
+      <t>[ ] Store proof_hash and proof_signature in settlement records (Section 9.5)</t>
+    </section>
+  </section>
+
+  <section title="13. Reference Implementation">
+      <t>The reference implementation is available at:</t>
+      <t>Repository: https://github.com/bkauto3/SwarmSync</t>
+      <figure>
+        <artwork type="table"><![CDATA[
+| Component | File | Description |
+|-----------|------|-------------|
+| Negotiation | `apps/api/src/modules/ap2/ap2.service.ts` | AP2 negotiation state machine |
+| Escrow | `apps/api/src/modules/payments/ap2.service.ts` | Atomic escrow hold/release/refund |
+| Wallet Ledger | `apps/api/src/modules/payments/wallets.service.ts` | Double-entry wallet with atomic guards |
+| Verification Dispatch | `apps/api/src/modules/conduit/conduit-verification.service.ts` | Verification initiation and callback |
+| Verification Hints | `apps/api/src/modules/conduit/dto/verification-hints.dto.ts` | VerificationHintsDto |
+| Verification Callback | `apps/api/src/modules/conduit/dto/verification-callback.dto.ts` | VerificationCallbackDto |
+| AP2-Conduit Bridge | `apps/api/src/modules/conduit/conduit-ap2-bridge.service.ts` | Session billing, invoice signing |
+| Agent Identity | `apps/api/src/modules/conduit/conduit-identity.service.ts` | Ed25519 keys, HMAC signing |
+| Outcomes | `apps/api/src/modules/quality/outcomes.service.ts` | Verification -> escrow settlement |
+| Trust & Passport | `apps/api/src/modules/conduit/conduit-passport.service.ts` | Execution track record (see ATEP spec) |
+]]></artwork>
+      </figure>
+  </section>
+
+  <section title="Appendix A: Complete Action Type Registry">
+      <t>These are the standard action types for browser-automation verifiers. Other verifier types may define their own action vocabularies.</t>
+      <figure>
+        <artwork type="table"><![CDATA[
+| Action | Description | Cost Category |
+|--------|-------------|---------------|
+| `NAVIGATE` | Load a URL | Billable |
+| `CLICK` | Click an element | Billable |
+| `TYPE` | Type into an input | Billable |
+| `FILL` | Fill a form field | Billable |
+| `EXTRACT` | Extract text content | Billable |
+| `SCREENSHOT` | Capture a screenshot | Billable |
+| `SCROLL` | Scroll the page | Free |
+| `WAIT` | Wait for a duration | Free |
+| `WAIT_FOR` | Wait for a selector | Free |
+| `KEY_PRESS` | Press a keyboard key | Free |
+| `HOVER` | Hover over an element | Free |
+| `SELECT_OPTION` | Select a dropdown option | Billable |
+| `HANDLE_DIALOG` | Dismiss/accept a dialog | Free |
+| `NAVIGATE_BACK` | Go back in history | Billable |
+| `CONSOLE_MESSAGES` | Read console output | Free |
+| `EVAL` | Execute JavaScript | Billable |
+| `EXTRACT_MAIN` | Extract main content | Billable |
+| `OUTPUT_TO_FILE` | Save data to file | Free |
+| `ACCESSIBILITY_SNAPSHOT` | Capture a11y tree | Billable |
+| `NETWORK_REQUESTS` | Read network log | Free |
+| `MAP` | Map site structure | Billable |
+| `CRAWL` | Crawl multiple pages | Billable |
+| `FINGERPRINT` | SHA-256 page fingerprint | Billable |
+| `CHECK_CHANGED` | Compare fingerprints | Billable |
+| `EXPORT_PROOF` | Export proof bundle | Free |
+]]></artwork>
+      </figure>
+  </section>
+
+  <section title="Appendix B: JSON Schema">
+      <t>Machine-readable JSON Schema definitions for all VCAP message types are available at:</t>
+      <figure>
+        <artwork type="sourcecode"><![CDATA[
+https://github.com/swarmsync-ai/vcap-spec/tree/main/schemas/
+]]></artwork>
+      </figure>
+  </section>
+
+  <section title="Appendix C: Relationship to AIVS">
+      <t>The AI Visibility Verification Standard (AIVS) defines a proof bundle format (Ed25519 + SHA-256 hash chain) for AI browser scan verification. AIVS proof bundles are a valid VCAP proof format. When a VCAP verifier uses AIVS-compliant proof bundles:</t>
+      <t>The proof_hash in the VCAP callback corresponds to the AIVS manifest hash</t>
+      <t>The proof_signature corresponds to the AIVS session_sig.txt</t>
+      <t>The action_log corresponds to the AIVS audit_log.jsonl</t>
+      <t>The AIVS verify.py can independently validate the proof without VCAP infrastructure</t>
+      <t>This layering means AIVS proofs are portable: they can be verified both within a VCAP settlement flow and independently by any party with the proof bundle file.</t>
+  </section>
+
+  <section title="Appendix D: Changelog">
+  </section>
+
+  <section title="IANA Considerations">
+    <t>This document has no IANA actions.</t>
+  </section>
+
+  </middle>
+  <back>
+    <references title="Normative References">
+      <reference anchor="RFC2119">
+        <front>
+          <title>Key words for use in RFCs to Indicate Requirement Levels</title>
+          <author initials="S." surname="Bradner" fullname="Scott Bradner"/>
+          <date month="March" year="1997"/>
+        </front>
+        <seriesInfo name="BCP" value="14"/>
+        <seriesInfo name="RFC" value="2119"/>
+      </reference>
+      <reference anchor="RFC8174">
+        <front>
+          <title>Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words</title>
+          <author initials="B." surname="Leiba" fullname="Barry Leiba"/>
+          <date month="May" year="2017"/>
+        </front>
+        <seriesInfo name="BCP" value="14"/>
+        <seriesInfo name="RFC" value="8174"/>
+      </reference>
+    </references>
+    <references title="Informative References">
+      <reference anchor="AP2">
+        <front>
+          <title>Agent Payments Protocol (AP2)</title>
+          <author><organization>Google et al.</organization></author>
+          <date year="2025"/>
+        </front>
+        <format type="HTML" target="https://ap2-protocol.org/specification/"/>
+      </reference>
+      <reference anchor="A2A">
+        <front>
+          <title>Agent-to-Agent Protocol</title>
+          <author><organization>Google</organization></author>
+          <date year="2025"/>
+        </front>
+        <format type="HTML" target="https://google.github.io/A2A/"/>
+      </reference>
+    </references>
+  </back>
+</rfc>
